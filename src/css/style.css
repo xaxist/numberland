@@ -87,15 +87,16 @@ body {
 .logo { font-size: 1.5rem; font-weight: 700; text-shadow: 0 2px 0 rgba(255,255,255,.7); }
 .top-right { display: flex; align-items: center; gap: 10px; }
 
-.star-counter {
+.counter {
   background: #fff;
   border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 1.2rem;
+  padding: 6px 12px;
+  font-size: 1.15rem;
   font-weight: 700;
   box-shadow: 0 3px 0 rgba(0,0,0,.12);
 }
-.star-counter.bump { animation: bump .45s ease; }
+#trophy-counter { background: #fff3bf; }
+.counter.bump { animation: bump .45s ease; }
 @keyframes bump {
   30% { transform: scale(1.35) rotate(-6deg); }
   60% { transform: scale(0.95); }
@@ -174,16 +175,6 @@ body {
 .mode-icon { font-size: 3.2rem; line-height: 1; filter: drop-shadow(0 3px 2px rgba(0,0,0,.2)); }
 .mode-name { font-size: 1.25rem; font-weight: 700; text-shadow: 0 2px 0 rgba(0,0,0,.15); }
 .mode-desc { font-size: .85rem; opacity: .92; }
-
-.trophy-shelf {
-  margin-top: 26px;
-  text-align: center;
-  background: rgba(255,255,255,.55);
-  border-radius: 18px;
-  padding: 10px 14px;
-  font-size: 1.3rem;
-}
-.trophy-label { font-size: 1rem; font-weight: 600; margin-right: 8px; }
 
 /* ---------- game screen ---------- */
 .game-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 8px; }
@@ -306,20 +297,19 @@ body {
   60% { transform: scale(1.1) rotate(5deg); }
 }
 
-/* ---------- feedback overlay ---------- */
+/* ---------- feedback strip (in flow, never covers the buttons) ---------- */
 .feedback {
-  position: fixed;
-  inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  min-height: 74px;
+  margin-top: 2px;
   pointer-events: none;
-  z-index: 40;
 }
-.feedback .fb-emoji { font-size: clamp(5rem, 20vw, 9rem); animation: fbBounce .8s ease; filter: drop-shadow(0 8px 12px rgba(0,0,0,.25)); }
+.feedback .fb-emoji { font-size: 3rem; line-height: 1; animation: fbBounce .8s ease; filter: drop-shadow(0 4px 6px rgba(0,0,0,.2)); }
 .feedback .fb-word {
-  font-size: clamp(2rem, 8vw, 3.2rem);
+  font-size: clamp(1.6rem, 5vw, 2.4rem);
   font-weight: 700;
-  color: #fff;
-  text-shadow: 0 3px 0 rgba(0,0,0,.25);
+  color: var(--ink);
+  text-shadow: 0 2px 0 rgba(255,255,255,.8);
   animation: popIn .5s ease;
 }
 @keyframes fbBounce {

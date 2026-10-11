@@ -93,9 +93,11 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
 
 ### Progression
 
-- Correct answer: +1 star (persisted), praise overlay + chime + spoken praise, streak +1.
+- Correct answer: +1 star (persisted), praise shown in the **feedback strip** (an in-flow row
+  between the question bar and the visuals — never an overlay on top of the answer buttons),
+  chime + spoken praise, streak +1.
 - **3-streak → level up** (max level 4): confetti, fanfare, spoken "Level up!".
-- **Every 10 stars → trophy screen**: big confetti, fanfare, trophy count on the home shelf.
+- **Every 10 stars → trophy screen**: big confetti, fanfare, trophy count bumps in the top bar.
 - Wrong answer: option dims and disables, spoken encouragement, streak resets. No penalty.
 - Generators receive `level` (1–4) and must scale difficulty (see existing modes for ranges).
 

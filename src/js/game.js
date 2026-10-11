@@ -495,14 +495,17 @@ function showScreen(id) {
   $('#btn-home').classList.toggle('hidden', id === 'screen-home');
 }
 
-function updateStarUI(bump = false) {
+function bump(el) {
+  el.classList.remove('bump');
+  void el.offsetWidth;
+  el.classList.add('bump');
+}
+
+function updateCounters(bumpStars = false, bumpTrophies = false) {
   $('#star-count').textContent = State.stars;
-  if (bump) {
-    const el = $('#star-counter');
-    el.classList.remove('bump');
-    void el.offsetWidth;
-    el.classList.add('bump');
-  }
+  $('#trophy-count').textContent = State.trophies;
+  if (bumpStars) bump($('#star-counter'));
+  if (bumpTrophies) bump($('#trophy-counter'));
 }
 
 function renderHome() {
@@ -521,13 +524,6 @@ function renderHome() {
       startMode(m.id);
     });
     grid.appendChild(btn);
-  }
-  const shelf = $('#trophy-shelf');
-  if (State.trophies > 0) {
-    shelf.classList.remove('hidden');
-    $('#trophy-list').textContent = '🏆'.repeat(Math.min(State.trophies, 20));
-  } else {
-    shelf.classList.add('hidden');
   }
 }
 
@@ -710,7 +706,7 @@ function handleCorrect() {
   State.stars++;
   State.streak++;
   State.save();
-  updateStarUI(true);
+  updateCounters(true);
 
   const leveledUp = State.streak >= 3 && State.level < 4;
   if (leveledUp) {
@@ -720,7 +716,6 @@ function handleCorrect() {
 
   const fb = $('#feedback');
   fb.innerHTML = `<div class="fb-emoji">${leveledUp ? '🏅' : pick(PRAISE_EMOJI)}</div><div class="fb-word">${leveledUp ? 'Level up!' : pick(PRAISES)}</div>`;
-  fb.classList.remove('hidden');
 
   if (leveledUp) {
     Confetti.launch(150);
@@ -734,7 +729,7 @@ function handleCorrect() {
   clearTimeout(State.timer);
   State.timer = setTimeout(() => {
     State.timer = null;
-    fb.classList.add('hidden');
+    fb.innerHTML = '';
     if (milestone) {
       showReward();
     } else {
@@ -746,6 +741,7 @@ function handleCorrect() {
 function showReward() {
   State.trophies++;
   State.save();
+  updateCounters(false, true);
   $('#reward-count').textContent = `You have ${State.trophies} ${State.trophies === 1 ? 'trophy' : 'trophies'}! 🏆`;
   showScreen('screen-reward');
   Sound.fanfare();
@@ -772,7 +768,7 @@ function startMode(modeId) {
 function goHome() {
   clearTimeout(State.timer);
   State.timer = null;
-  $('#feedback').classList.add('hidden');
+  $('#feedback').innerHTML = '';
   Speech.stop();
   renderHome();
   showScreen('screen-home');
@@ -804,7 +800,7 @@ function init() {
   Confetti.init();
   Speech.init();
   renderHome();
-  updateStarUI();
+  updateCounters();
   showScreen('screen-home');
 
   // Unlock audio on first touch/click (required by browsers)
@@ -854,7 +850,7 @@ function init() {
     State.stars = 0;
     State.trophies = 0;
     State.save();
-    updateStarUI();
+    updateCounters();
     renderHome();
     b.textContent = '✅ Progress reset!';
     Sound.correct();
