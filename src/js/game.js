@@ -840,33 +840,35 @@ const Generators = {
   },
 };
 
+// Ordered by difficulty: youngest starting level first, then by how high the ceiling goes.
+// The home grid renders in this exact order, so keep new modes inserted, not appended.
 const MODES = [
-  { id: 'count',      name: 'Counting',     desc: 'Count the objects',      icon: '🍎', color: '#ff6b6b' },
-  { id: 'find',       name: 'Find Number',  desc: 'Spot the number',        icon: '🔢', color: '#4dabf7' },
-  { id: 'add',        name: 'Adding',       desc: 'Put groups together',    icon: '➕', color: '#51cf66' },
-  { id: 'sub',        name: 'Take Away',    desc: 'How many are left?',     icon: '➖', color: '#ffa94d' },
-  { id: 'compare',    name: 'More or Less', desc: 'Which side wins?',       icon: '⚖️', color: '#9775fa' },
-  { id: 'shapes',     name: 'Shapes',       desc: 'Name that shape',        icon: '🔷', color: '#f783ac' },
-  { id: 'measure',    name: 'Measure',      desc: 'How many cubes long?',   icon: '📏', color: '#7048e8' },
-  { id: 'data',       name: 'My Graph',     desc: 'Read the picture graph', icon: '📊', color: '#12b886' },
-  { id: 'missing',    name: 'Missing No.',  desc: 'Solve the gap',          icon: '❓', color: '#20c997' },
-  { id: 'multiply',   name: 'Multiply',     desc: 'Times tables fun',       icon: '✖️', color: '#f03e3e' },
-  { id: 'divide',     name: 'Share Fairly', desc: 'Divide into groups',     icon: '🍰', color: '#e64980' },
-  { id: 'money',      name: 'Treasure',     desc: 'Count the coins',        icon: '🪙', color: '#fab005' },
-  { id: 'patterns',   name: 'Patterns',     desc: 'What comes next?',       icon: '🧩', color: '#4263eb' },
-  { id: 'oddeven',    name: 'Odd or Even',  desc: 'Pair them up',           icon: '👯', color: '#d6336c' },
-  { id: 'placevalue', name: 'Place Value',  desc: 'Tens, hundreds, more',   icon: '🧮', color: '#0ca678' },
-  { id: 'fraction',   name: 'Fractions',    desc: 'Parts of a whole',       icon: '🍕', color: '#ae3ec9' },
-  { id: 'clock',      name: 'Clock Time',   desc: 'Read the clock',         icon: '🕐', color: '#f76707' },
+  { id: 'count',      name: 'Counting',     desc: 'Count the objects',       icon: '🍎', color: '#ff6b6b' },
+  { id: 'find',       name: 'Find Number',  desc: 'Spot the number',         icon: '🔢', color: '#4dabf7' },
+  { id: 'compare',    name: 'More or Less', desc: 'Which side wins?',        icon: '⚖️', color: '#9775fa' },
+  { id: 'shapes',     name: 'Shapes',       desc: 'Name that shape',         icon: '🔷', color: '#f783ac' },
+  { id: 'add',        name: 'Adding',       desc: 'Put groups together',     icon: '➕', color: '#51cf66' },
+  { id: 'sub',        name: 'Take Away',    desc: 'How many are left?',      icon: '➖', color: '#ffa94d' },
+  { id: 'measure',    name: 'Measure',      desc: 'How many cubes long?',    icon: '📏', color: '#7048e8' },
+  { id: 'data',       name: 'My Graph',     desc: 'Read the picture graph',  icon: '📊', color: '#12b886' },
+  { id: 'money',      name: 'Treasure',     desc: 'Count the coins',         icon: '🪙', color: '#fab005' },
+  { id: 'missing',    name: 'Missing No.',  desc: 'Solve the gap',           icon: '❓', color: '#20c997' },
+  { id: 'oddeven',    name: 'Odd or Even',  desc: 'Pair them up',            icon: '👯', color: '#d6336c' },
+  { id: 'multiply',   name: 'Multiply',     desc: 'Times tables fun',        icon: '✖️', color: '#f03e3e' },
+  { id: 'patterns',   name: 'Patterns',     desc: 'What comes next?',        icon: '🧩', color: '#4263eb' },
+  { id: 'divide',     name: 'Share Fairly', desc: 'Divide into groups',      icon: '🍰', color: '#e64980' },
+  { id: 'clock',      name: 'Clock Time',   desc: 'Read the clock',          icon: '🕐', color: '#f76707' },
+  { id: 'placevalue', name: 'Place Value',  desc: 'Tens, hundreds, more',    icon: '🧮', color: '#0ca678' },
+  { id: 'fraction',   name: 'Fractions',    desc: 'Parts of a whole',        icon: '🍕', color: '#ae3ec9' },
   { id: 'round',      name: 'Rounding',     desc: 'Round it to the nearest', icon: '🎯', color: '#5c7cfa' },
-  { id: 'mixed',      name: 'Brain Order',  desc: 'Brackets come first',    icon: '🧠', color: '#82c91e' },
+  { id: 'mixed',      name: 'Brain Order',  desc: 'Brackets come first',     icon: '🧠', color: '#82c91e' },
 ];
 
 /* ---------- UI rendering ---------- */
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
   $(`#${id}`).classList.remove('hidden');
-  $('#btn-home').classList.toggle('hidden', id === 'screen-home');
+  $('#btn-back').classList.toggle('hidden', id === 'screen-home');
 }
 
 function bump(el) {
@@ -1235,7 +1237,7 @@ function startMode(modeId) {
   nextQuestion();
 }
 
-function goHome() {
+function goBack() {
   clearTimeout(State.timer);
   State.timer = null;
   $('#feedback').innerHTML = '';
@@ -1280,7 +1282,7 @@ function init() {
   };
   document.addEventListener('pointerdown', unlock);
 
-  $('#btn-home').addEventListener('click', () => { Sound.pop(); goHome(); });
+  $('#btn-back').addEventListener('click', () => { Sound.pop(); goBack(); });
   $('#btn-repeat').addEventListener('click', () => {
     Sound.pop();
     if (State.question) Speech.say(State.question.speak);

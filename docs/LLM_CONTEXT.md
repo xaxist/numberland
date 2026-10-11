@@ -27,7 +27,10 @@ repository root.
    - Confetti showers only on **level completion** (3-correct streak) and **trophy milestones**
      (every 10 stars) — never on ordinary correct answers.
    - The home screen is a **single flat grid** of game cards (no age/section grouping),
-     ordered easiest → hardest.
+     ordered as a difficulty ladder from easiest to hardest concept.
+   - In-game navigation is a single **back button** (`#btn-back`, ⬅️) in the top-left of the
+     top bar — no home button. It is hidden on the home screen and returns the child to the
+     game grid from the game and reward screens.
    - Speech and pending question timers must be cancelled when leaving the game screen.
    - A wrong tap never punishes, but a child must never be stuck: on the **second** wrong tap
      of a question the correct option gets a green glow (`reveal`) and is described aloud.
@@ -76,9 +79,10 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
   `clockSVG(hour, minute)` and `pieSVG(parts, shaded)` which render inline SVG.
 - **`Generators`** — one function per game mode, keyed by mode id. Each returns a
   **question object** (contract below).
-- **`MODES`** — registry array of `{ id, name, desc, icon, color }`; order = home grid order.
+- **`MODES`** — registry array of `{ id, name, desc, icon, color }`; array order is the
+  difficulty ladder and drives the home grid (see the game table below).
 - **Render/flow** — `renderHome`, `renderQuestion`, `onAnswer`, `onCompare`,
-  `handleCorrect`, `showReward`, `nextQuestion`, `startMode`, `goHome`, settings modal,
+  `handleCorrect`, `showReward`, `nextQuestion`, `startMode`, `goBack`, settings modal,
   `init` on `DOMContentLoaded`.
 
 ### Question object contract
@@ -104,29 +108,33 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
 | `q.compare`   | `{ left, right, emoji }` — two panels, `q.answer` is `'left'`/`'right'` |
 | `q.shapeOptions` | Array of `{ e, w }` shape objects |
 
-### The 19 games (home grid order: easiest → hardest)
+### The 19 games (home grid order = difficulty ladder, easiest → hardest)
 
-| id | Concept | Ages | Level 4 ceiling |
-|----|---------|------|-----------------|
-| `count` | Counting objects | 3–5 | up to 20 objects |
-| `find` | Recognise a spoken number | 3–6 | numbers to 999 |
-| `add` | Addition with tappable groups | 4–9 | 3-digit + 3-digit |
-| `sub` | Subtraction with crossing-out | 4–9 | 3-digit − 3-digit |
-| `compare` | More / fewer | 4–6 | up to 20 per side |
-| `shapes` | Shape names | 4–6 | 6 shapes on screen |
-| `measure` | Non-standard measurement | 5–8 | compare two lengths, to 20 cubes |
-| `data` | Picture graphs: most/fewest/how many/how many more | 5–9 | 4 categories, up to 10 |
-| `missing` | Missing number / fact families | 5–9 | 3-digit equations |
-| `multiply` | Times tables, grouped objects | 6–10 | 11–19 × 3–9, tables to 12 |
-| `divide` | Sharing into equal groups | 7–9 | tables to 9, grouping shown |
-| `money` | Adding coin values | 6–9 | values to 50, 6 coins |
-| `patterns` | Number sequences (+ rules, doubling) | 6–10 | step up to 10 and doubling from 5 |
-| `oddeven` | Odd/even by pairing | 6–9 | numbers to 999 |
-| `placevalue` | Tens, hundreds, digit values | 7–10 | thousands + "value of the digit" |
-| `fraction` | Unit fractions from a shaded pie | 7–10 | twelfths |
-| `clock` | Reading an analog clock | 6–10 | minutes in 5s |
-| `round` | Rounding | 8–10 | nearest 1000 |
-| `mixed` | Order of operations (brackets first) | 8–10 | `a × b + c × d`, `(a − b) × c`, `a − b ÷ c` |
+The grid order **is** the curriculum: index 0 is the easiest concept for a 3-year-old and the
+last is the hardest for a 10-year-old. When adding a mode, insert it where its concept sits on
+this ladder rather than appending it.
+
+| # | id | Concept | Ages | Level 4 ceiling |
+|---|----|---------|------|-----------------|
+| 1 | `count` | Counting objects | 3–5 | up to 20 objects |
+| 2 | `find` | Recognise a spoken number | 3–6 | numbers to 999 |
+| 3 | `compare` | More / fewer | 3–6 | up to 20 per side |
+| 4 | `shapes` | Shape names | 4–6 | 6 shapes on screen |
+| 5 | `add` | Addition with tappable groups | 4–9 | 3-digit + 3-digit |
+| 6 | `sub` | Subtraction with crossing-out | 4–9 | 3-digit − 3-digit |
+| 7 | `measure` | Non-standard measurement | 5–8 | compare two lengths, to 20 cubes |
+| 8 | `data` | Picture graphs: most/fewest/how many/how many more | 5–9 | 4 categories, up to 10 |
+| 9 | `money` | Adding coin values | 5–9 | values to 50, 6 coins |
+| 10 | `missing` | Missing number / fact families | 6–9 | 3-digit equations |
+| 11 | `oddeven` | Odd/even by pairing | 6–9 | numbers to 999 |
+| 12 | `multiply` | Times tables, grouped objects | 6–10 | 11–19 × 3–9, tables to 12 |
+| 13 | `patterns` | Number sequences (+ rules, doubling) | 6–10 | step up to 10 and doubling from 5 |
+| 14 | `divide` | Sharing into equal groups | 7–9 | tables to 9, grouping shown |
+| 15 | `clock` | Reading an analog clock | 7–10 | minutes in 5s |
+| 16 | `placevalue` | Tens, hundreds, digit values | 7–10 | thousands + "value of the digit" |
+| 17 | `fraction` | Unit fractions from a shaded pie | 7–10 | twelfths |
+| 18 | `round` | Rounding | 8–10 | nearest 1000 |
+| 19 | `mixed` | Order of operations (brackets first) | 8–10 | `a × b + c × d`, `(a − b) × c`, `a − b ÷ c` |
 
 ### Progression
 
@@ -150,9 +158,10 @@ zeroes stars/trophies). Reset confirm auto-disarms after 3s and on modal close.
 ## How to add a new game mode
 
 1. Write `Generators.mymode(level)` returning a question object per the contract above.
-2. Add `{ id: 'mymode', name, desc, icon, color }` to `MODES`.
+2. Insert `{ id: 'mymode', name, desc, icon, color }` into `MODES` **at its place on the
+   difficulty ladder** (not appended), so the grid stays easiest → hardest.
 3. If it needs a new visual kind, extend `renderQuestion` and `style.css`.
-4. Test: serve locally, answer correctly/incorrectly, level up, go home mid-question
+4. Test: serve locally, answer correctly/incorrectly, level up, press back mid-question
    (speech must stop), check the console.
 
 ## Local development & testing
@@ -164,7 +173,7 @@ python3 -m http.server 8765   # from repo root, then open http://localhost:8765/
 (Opening the root shim redirects to `src/`. Serving directly from `src/` also works.)
 
 There is no test suite; verify manually in a browser: each mode renders, correct answers
-score stars, wrong answers are gentle, home button stops speech, console has no errors.
+score stars, wrong answers are gentle, back button stops speech, console has no errors.
 
 ## Deployment
 
