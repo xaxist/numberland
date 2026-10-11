@@ -84,7 +84,16 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px;
 }
-.logo { font-size: 1.5rem; font-weight: 700; text-shadow: 0 2px 0 rgba(255,255,255,.7); }
+.logo {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 1.5rem; font-weight: 700;
+  text-shadow: 0 2px 0 rgba(255,255,255,.7);
+}
+.logo-img {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .15);
+}
 .top-right { display: flex; align-items: center; gap: 10px; }
 
 .counter {
@@ -389,4 +398,5 @@ body {
   .mode-icon { font-size: 2.6rem; }
   .compare-wrap { gap: 10px; }
   .logo { font-size: 1.2rem; }
+  .logo-img { width: 32px; height: 32px; border-radius: 8px; }
 }
