@@ -129,6 +129,29 @@ body {
 }
 .subtitle { text-align: center; margin: 0 0 18px; font-size: 1.1rem; opacity: .75; }
 
+/* big equation / sequence text inside the visual area */
+.visual-text {
+  width: 100%;
+  text-align: center;
+  font-size: clamp(2.2rem, 8vw, 3.6rem);
+  font-weight: 700;
+}
+
+/* grouped emoji boxes (multiply groups, odd/even pairs) */
+.group-box {
+  background: rgba(255, 255, 255, .75);
+  border-radius: 16px;
+  padding: 8px 10px;
+  display: flex; flex-wrap: wrap; gap: 2px;
+  justify-content: center; align-items: center;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, .08);
+}
+.group-box .obj { font-size: 1.7rem; }
+.group-box.single { background: rgba(255, 213, 59, .5); }
+
+.clock-wrap { width: 100%; display: flex; justify-content: center; }
+.clock-wrap svg { filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .15)); }
+
 /* ---------- mode cards ---------- */
 .mode-grid {
   display: grid;

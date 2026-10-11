@@ -183,9 +183,73 @@ function numberOptions(correct, count, min, max) {
   return shuffle([...set]);
 }
 
+function multiplyOptions(product, table) {
+  const set = new Set([product]);
+  const cands = shuffle([product - table, product + table, product + 2 * table, product - 2 * table, product + 1, product - 1, product + 10, product - 10]);
+  for (const c of cands) {
+    if (set.size >= 4) break;
+    if (c >= 0) set.add(c);
+  }
+  return shuffle([...set]);
+}
+
+function pvOptions(n) {
+  const set = new Set([n]);
+  const hundreds = Math.floor(n / 100), tens = Math.floor(n / 10) % 10, ones = n % 10;
+  const swapped = hundreds * 100 + ones * 10 + tens;
+  if (swapped !== n && swapped >= 0) set.add(swapped);
+  let guard = 0;
+  while (set.size < 3 && guard++ < 60) {
+    const d = n + pick([-100, 100, -10, 10, -2, 2, -1, 1]);
+    if (d >= 0) set.add(d);
+  }
+  return shuffle([...set]);
+}
+
+function fmtTime(hour, minute) {
+  return `${hour}:${String(minute).padStart(2, '0')}`;
+}
+
+function clockOptions(hour, minute, count) {
+  const set = new Set([fmtTime(hour, minute)]);
+  let guard = 0;
+  while (set.size < count && guard++ < 60) {
+    let h = hour + pick([-2, -1, 1, 2]);
+    if (h < 1) h += 12;
+    if (h > 12) h -= 12;
+    set.add(fmtTime(h, minute));
+  }
+  return shuffle([...set]);
+}
+
+function clockSVG(hour, minute) {
+  const hand = (angleDeg, len, width, color) => {
+    const rad = (angleDeg - 90) * Math.PI / 180;
+    const x = 90 + len * Math.cos(rad);
+    const y = 90 + len * Math.sin(rad);
+    return `<line x1="90" y1="90" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/>`;
+  };
+  let ticks = '';
+  for (let i = 0; i < 12; i++) {
+    const a = i * 30 * Math.PI / 180;
+    const x = 90 + 62 * Math.sin(a);
+    const y = 90 - 62 * Math.cos(a);
+    ticks += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="16" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#343a40">${i === 0 ? 12 : i}</text>`;
+  }
+  const minAngle = minute * 6;
+  const hourAngle = (hour % 12) * 30 + minute * 0.5;
+  return `<svg viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="clock">
+    <circle cx="90" cy="90" r="84" fill="#ffffff" stroke="#4dabf7" stroke-width="8"/>
+    ${ticks}
+    ${hand(hourAngle, 42, 8, '#343a40')}
+    ${hand(minAngle, 62, 5, '#ff6b6b')}
+    <circle cx="90" cy="90" r="7" fill="#ffd43b"/>
+  </svg>`;
+}
+
 const Generators = {
   count(level) {
-    const max = level === 1 ? 5 : 10;
+    const max = level === 1 ? 5 : level === 2 ? 10 : level === 3 ? 15 : 20;
     const n = rand(1, max);
     const obj = pick(OBJECTS);
     return {
@@ -199,7 +263,7 @@ const Generators = {
   },
 
   find(level) {
-    const max = level === 1 ? 5 : level === 2 ? 10 : 20;
+    const max = level === 1 ? 5 : level === 2 ? 10 : level === 3 ? 20 : 99;
     const target = rand(1, max);
     return {
       type: 'options',
@@ -212,7 +276,7 @@ const Generators = {
   },
 
   add(level) {
-    const maxSum = level === 1 ? 5 : 10;
+    const maxSum = level === 1 ? 5 : level === 2 ? 10 : 20;
     const a = rand(1, maxSum - 1);
     const b = rand(1, maxSum - a);
     const obj = pick(OBJECTS);
@@ -228,7 +292,7 @@ const Generators = {
   },
 
   sub(level) {
-    const max = level === 1 ? 5 : 10;
+    const max = level === 1 ? 5 : level === 2 ? 10 : 20;
     const a = rand(2, max);
     const b = rand(1, level === 1 ? a - 1 : a);
     const obj = pick(OBJECTS);
@@ -244,7 +308,7 @@ const Generators = {
   },
 
   compare(level) {
-    const max = level === 1 ? 5 : 10;
+    const max = level === 1 ? 5 : level === 2 ? 10 : 20;
     let left = rand(1, max);
     let right = rand(1, max);
     while (right === left) right = rand(1, max);
@@ -275,15 +339,153 @@ const Generators = {
       answer: target.w,
     };
   },
+
+  missing(level) {
+    const max = level === 1 ? 10 : level === 2 ? 15 : 20;
+    const useSub = level >= 2 && Math.random() < 0.5;
+    if (useSub) {
+      const a = rand(3, max);
+      const r = rand(1, a - 1);
+      const b = a - r;
+      return {
+        type: 'options',
+        text: `${a} − ? = ${r}`,
+        speak: `What is the missing number? ${a} minus what equals ${r}?`,
+        visualText: `${a} − ❓ = ${r}`,
+        options: numberOptions(b, 4, 0, max),
+        answer: b,
+      };
+    }
+    const sum = rand(4, max);
+    const a = rand(1, sum - 1);
+    const b = sum - a;
+    return {
+      type: 'options',
+      text: `${a} + ? = ${sum}`,
+      speak: `What is the missing number? ${a} plus what equals ${sum}?`,
+      visualText: `${a} + ❓ = ${sum}`,
+      options: numberOptions(b, 4, 0, max),
+      answer: b,
+    };
+  },
+
+  multiply(level) {
+    const tables = level === 1 ? [2, 5, 10] : level === 2 ? [2, 3, 4, 5, 10] : [2, 3, 4, 5, 6];
+    const a = pick(tables);
+    const b = rand(1, level === 1 ? 5 : level === 2 ? 6 : 9);
+    const product = a * b;
+    const q = {
+      type: 'options',
+      text: `${a} × ${b} = ?`,
+      speak: `What is ${a} times ${b}? ${a} groups of ${b}.`,
+      visualText: `${a} × ${b} = ❓`,
+      options: multiplyOptions(product, a),
+      answer: product,
+    };
+    if (product <= 24) q.groups = { count: a, size: b, emoji: pick(OBJECTS).e };
+    return q;
+  },
+
+  patterns(level) {
+    const steps = level === 1 ? [1, 2] : level === 2 ? [2, 5, 10] : [2, 3, 4, 5, 10];
+    const step = pick(steps);
+    const down = level >= 3 && Math.random() < 0.4;
+    const shown = level === 1 ? 3 : 4;
+    const start = down ? rand(step * shown + 1, step * shown + 10) : rand(1, 10);
+    const seq = [];
+    for (let i = 0; i < shown; i++) seq.push(start + (down ? -step : step) * i);
+    const answer = start + (down ? -step : step) * shown;
+    return {
+      type: 'options',
+      text: 'What comes next?',
+      speak: `What comes next? ${seq.join(', ')}, what?`,
+      visualText: seq.join(' → ') + ' → ❓',
+      options: numberOptions(answer, 3, 0, answer + step * 2 + 2),
+      answer,
+    };
+  },
+
+  oddeven(level) {
+    const max = level === 1 ? 10 : level === 2 ? 30 : 99;
+    const n = rand(1, max);
+    const q = {
+      type: 'options',
+      text: `Is ${n} odd or even?`,
+      speak: `Is ${n} odd or even?`,
+      options: shuffle(['ODD', 'EVEN']),
+      answer: n % 2 === 1 ? 'ODD' : 'EVEN',
+    };
+    if (n <= 16) q.pairs = { n, emoji: pick(OBJECTS).e };
+    else q.visualText = String(n);
+    return q;
+  },
+
+  placevalue(level) {
+    const type = level >= 3 ? pick(['make3', 'tens']) : pick(['make2', 'make2', 'tens']);
+    if (type === 'make3') {
+      const h = rand(1, 5), t = rand(0, 9), o = rand(0, 9);
+      const n = h * 100 + t * 10 + o;
+      return {
+        type: 'options',
+        text: `${h} hundreds + ${t} tens + ${o} ones = ?`,
+        speak: `What is ${h} hundreds, ${t} tens, and ${o} ones?`,
+        visualText: `${h * 100} + ${t * 10} + ${o} = ❓`,
+        options: pvOptions(n),
+        answer: n,
+      };
+    }
+    if (type === 'tens') {
+      const n = rand(2, 9) * 10 + rand(1, 9);
+      const tens = Math.floor(n / 10);
+      return {
+        type: 'options',
+        text: `How many tens in ${n}?`,
+        speak: `How many tens are in ${n}?`,
+        visualText: String(n),
+        options: numberOptions(tens, 3, 0, 9),
+        answer: tens,
+      };
+    }
+    const t = rand(1, level === 1 ? 5 : 9);
+    const o = rand(1, 9);
+    const n = t * 10 + o;
+    return {
+      type: 'options',
+      text: `${t} tens + ${o} ones = ?`,
+      speak: `What is ${t} tens and ${o} ones?`,
+      visualText: `${t * 10} + ${o} = ❓`,
+      options: pvOptions(n),
+      answer: n,
+    };
+  },
+
+  clock(level) {
+    const minute = level === 1 ? 0 : level === 2 ? pick([0, 30]) : pick([0, 15, 30, 45]);
+    const hour = rand(1, 12);
+    return {
+      type: 'options',
+      text: 'What time is it? 🕐',
+      speak: 'What time is it? Look at the clock!',
+      clock: { hour, minute },
+      options: clockOptions(hour, minute, level === 1 ? 3 : 4),
+      answer: fmtTime(hour, minute),
+    };
+  },
 };
 
 const MODES = [
-  { id: 'count',   name: 'Counting',    desc: 'Count the objects',  icon: '🍎', color: '#ff6b6b' },
-  { id: 'find',    name: 'Find Number', desc: 'Spot the number',    icon: '🔢', color: '#4dabf7' },
-  { id: 'add',     name: 'Adding',      desc: 'Put groups together',icon: '➕', color: '#51cf66' },
-  { id: 'sub',     name: 'Take Away',   desc: 'How many are left?', icon: '➖', color: '#ffa94d' },
-  { id: 'compare', name: 'More or Less',desc: 'Which side wins?',   icon: '⚖️', color: '#9775fa' },
-  { id: 'shapes',  name: 'Shapes',      desc: 'Name that shape',    icon: '🔷', color: '#f783ac' },
+  { id: 'count',      name: 'Counting',     desc: 'Count the objects',    icon: '🍎', color: '#ff6b6b' },
+  { id: 'find',       name: 'Find Number',  desc: 'Spot the number',      icon: '🔢', color: '#4dabf7' },
+  { id: 'add',        name: 'Adding',       desc: 'Put groups together',  icon: '➕', color: '#51cf66' },
+  { id: 'sub',        name: 'Take Away',    desc: 'How many are left?',   icon: '➖', color: '#ffa94d' },
+  { id: 'compare',    name: 'More or Less', desc: 'Which side wins?',     icon: '⚖️', color: '#9775fa' },
+  { id: 'shapes',     name: 'Shapes',       desc: 'Name that shape',      icon: '🔷', color: '#f783ac' },
+  { id: 'missing',    name: 'Missing No.',  desc: 'Solve the gap',        icon: '❓', color: '#20c997' },
+  { id: 'multiply',   name: 'Multiply',     desc: 'Times tables fun',     icon: '✖️', color: '#f03e3e' },
+  { id: 'patterns',   name: 'Patterns',     desc: 'What comes next?',     icon: '🧩', color: '#4263eb' },
+  { id: 'oddeven',    name: 'Odd or Even',  desc: 'Pair them up',         icon: '👯', color: '#d6336c' },
+  { id: 'placevalue', name: 'Place Value',  desc: 'Tens and ones',        icon: '🧮', color: '#0ca678' },
+  { id: 'clock',      name: 'Clock Time',   desc: 'Read the clock',       icon: '🕐', color: '#f76707' },
 ];
 
 /* ---------- UI rendering ---------- */
@@ -359,6 +561,58 @@ function renderQuestion(q) {
     }
     visual.appendChild(wrap);
     return;
+  }
+
+  if (q.visualText) {
+    const d = document.createElement('div');
+    d.className = 'visual-text';
+    d.textContent = q.visualText;
+    visual.appendChild(d);
+  }
+
+  if (q.clock) {
+    const d = document.createElement('div');
+    d.className = 'clock-wrap';
+    d.innerHTML = clockSVG(q.clock.hour, q.clock.minute);
+    visual.appendChild(d);
+  }
+
+  if (q.groups) {
+    for (let g = 0; g < q.groups.count; g++) {
+      const box = document.createElement('div');
+      box.className = 'group-box';
+      for (let i = 0; i < q.groups.size; i++) {
+        const s = document.createElement('span');
+        s.className = 'obj static';
+        s.textContent = q.groups.emoji;
+        box.appendChild(s);
+      }
+      visual.appendChild(box);
+    }
+  }
+
+  if (q.pairs) {
+    const fullPairs = Math.floor(q.pairs.n / 2);
+    for (let i = 0; i < fullPairs; i++) {
+      const box = document.createElement('div');
+      box.className = 'group-box';
+      for (let j = 0; j < 2; j++) {
+        const s = document.createElement('span');
+        s.className = 'obj static';
+        s.textContent = q.pairs.emoji;
+        box.appendChild(s);
+      }
+      visual.appendChild(box);
+    }
+    if (q.pairs.n % 2 === 1) {
+      const box = document.createElement('div');
+      box.className = 'group-box single';
+      const s = document.createElement('span');
+      s.className = 'obj static';
+      s.textContent = q.pairs.emoji;
+      box.appendChild(s);
+      visual.appendChild(box);
+    }
   }
 
   if (q.objects) {
