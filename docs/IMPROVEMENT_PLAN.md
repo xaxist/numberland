@@ -226,6 +226,34 @@ quitting; Reset Progress clears both keys.
 > forever inside the option builder — the tab froze rather than erroring, which is how a real child
 > would experience it. Fixed, and the invariants are now asserted: **88,969 checks, 0 failures.**
 
+### Phase 5 — tone and access *(the last two §8 items: L6, M6)*
+
+> **Status: done 2026-10-12.** Pre-change snapshot restored from commit `b302235` into
+> `backup/2026-10-12-pre-phase5/`.
+>
+> **Strategy lines are taught once (L6).** Eleven of them — "Do the multiplication first!", "Watch
+> out for exchanging!", "Line up the tens and ones!", "Add up the biggest ones first", "Tap them to
+> count…" — were welded onto the wording of *every* question in count, add, sub, money, fraction,
+> measure, odd/even and brain-order. They now live in a `q.coach` field that is spoken on the first
+> question of a game per session and never again. The debate left this open because it is a policy,
+> not a patch: scaffolding a 6-year-old needs the first time and resents it the twentieth.
+> It is fused onto the question rather than queued behind it — the first version queued at a lower
+> priority, and the harness showed the next question was silently discarding it whenever a child
+> answered quickly. A teaching line that only survives if the child is slow is not a teaching line.
+>
+> **Pictures are described to a screen reader without giving the answer away (M6).** `#visual` takes
+> `role="img"` and a label naming the *kind* of picture — "A group of apples to count", "Two groups of
+> grapes to compare", "Rows of cubes to measure" — never the count, because the count is the answer the
+> child is working out. Compare panels are named "The left group"/"The right group" instead of reading
+> as twenty unlabelled emoji. `.icon-btn` goes to the 48px floor **and** gets `flex: 0 0 auto`: the old
+> 46px measurement was the top bar squeezing a 48px button, so fixing the size without stopping the
+> shrink would have left the same defect on a narrow phone.
+>
+> Verified: 101,820 checks / 0 failures (coverage per question rose from 15.97 to 21.11, so nothing
+> quietly stopped being asserted), 32,000 questions headlessly with no strategy clause left in any
+> `speak`, and in the app itself the hint is heard once across six questions while the button computes
+> to 48×48 with `flex-shrink: 0`. The 480 geometry assertions still report themselves as skipped.
+
 ## 4. Where the reviewers disagreed, and how it resolved
 
 Worth keeping, because each of these will be re-raised otherwise.
@@ -301,16 +329,16 @@ units-digit rule, not dots.
 
 ## 8. What is left
 
-Phases 0–4 closed every Critical, High and Medium finding in §1 and the polish list except three:
+Phases 0–5 closed every Critical, High and Medium finding in §1, the whole polish list, and the two
+accessibility items. Two things remain, and neither is a code task I can finish alone:
 
-- **Coaching tone (L6).** `mixed`, `add` and `sub` still append a strategy line to every question
-  ("Do the multiplication first!", "Watch out for exchanging!"). The panel called it patronising once
-  a child can do it; the developer called it the right scaffolding the first few times. Still open
-  because the fix is a policy, not a patch: move those clauses into a `q.coach` field and speak one
-  only on the first question of a game per session.
-- **Names and target sizes (M6).** The tappable objects are still unnamed `<span>`s, the compare
-  panels have no role or label, and `.icon-btn` measures 46px against the 48px floor.
-- **Zoom on phones (open question 1).** `user-scalable=no` stays, for the child reason.
+- **Zoom on phones (open question 1).** `user-scalable=no` stays, for the child reason. Dropping it
+  needs the layout to survive 200% zoom first, and nothing in this environment can prove that.
+- **A real device pass.** This is the highest-value verification left, and it is the owner's to do:
+  `src/tests.html` reports its 480 geometry assertions as **skipped** because the embedded browser is
+  0px wide, so every claim in this document about fitting a phone screen rests on CSS arithmetic and
+  computed styles, not on observation. Cube rows, four-wide comparison arrays, the digit chip, the
+  champion celebration, hold-to-hear on the cards and the voice queue all want eyes on a phone.
 
 And one thing no machine in this project can currently check: **the layout has never been measured on
 a real device.** `src/tests.html` reports its 480 geometry assertions as skipped because the embedded

@@ -242,6 +242,7 @@ const State = {
   question: null,
   timer: null,
   pending: null,
+  coached: {},
   save() {
     localStorage.setItem('nl_stars', String(this.stars));
     localStorage.setItem('nl_trophies', String(this.trophies));
@@ -452,7 +453,8 @@ const Generators = {
     return {
       type: 'count',
       text: `How many ${obj.w} do you see? Tap them to count!`,
-      speak: `How many ${obj.w} do you see? Tap them to count, then tap the answer!`,
+      speak: `How many ${obj.w} do you see?`,
+      coach: 'Tap them to count, then tap the answer!',
       objects: { emoji: obj.e, total: n, crossed: 0 },
       options: numberOptions(n, 3, 1, Math.max(7, max)),
       answer: n,
@@ -485,7 +487,8 @@ const Generators = {
       return {
         type: 'options',
         text: `${a} + ${b} = ?`,
-        speak: `What is ${a} plus ${b}? Line up the tens and ones!`,
+        speak: `What is ${a} plus ${b}?`,
+        coach: 'Line up the tens and the ones.',
         visualText: `${a} + ${b} = ❓`,
         options: nearOptions(sum, 4, [-100, -10, -1, 1, 10, 100], 1),
         answer: sum,
@@ -514,7 +517,8 @@ const Generators = {
       return {
         type: 'options',
         text: `${a} − ${b} = ?`,
-        speak: `What is ${a} minus ${b}? Watch out for exchanging!`,
+        speak: `What is ${a} minus ${b}?`,
+        coach: 'Watch out for exchanging!',
         visualText: `${a} − ${b} = ❓`,
         options: nearOptions(result, 4, [-100, -10, -1, 1, 10, 100], 1),
         answer: result,
@@ -711,7 +715,7 @@ const Generators = {
       // so the picture points straight at it.
       q.visualText = String(n);
       q.mark = String(n).length - 1;
-      q.speak = `Is ${n} odd or even? Look at the last digit.`;
+      q.coach = 'The last digit decides it.';
     }
     return q;
   },
@@ -871,7 +875,8 @@ const Generators = {
     return {
       type: 'options',
       text: 'What fraction of the pizza is shaded?',
-      speak: 'What fraction of this pizza is shaded? Count all the parts, then count the shaded ones!',
+      speak: 'What fraction of this pizza is shaded?',
+      coach: 'Count all the parts first, then count the shaded ones!',
       pie: { parts: den, shaded: num },
       options: fracOptions(den, num, level === 1 ? 3 : 4),
       answer: `${num}/${den}`,
@@ -889,7 +894,8 @@ const Generators = {
     return {
       type: 'options',
       text: 'How much treasure is in the pot?',
-      speak: 'Count the gold coins! Add up the biggest ones first. How much treasure altogether?',
+      speak: 'How much treasure is in the pot?',
+      coach: 'Add up the biggest coins first.',
       coins: held,
       options: optionSet(total, deltas.concat([-2, -1, 1, 2, 5, 10]).map(d => total + d), 4, 1),
       answer: total,
@@ -912,7 +918,8 @@ const Generators = {
       return {
         type: 'options',
         text: `How much longer is the ${objA.s} than the ${objB.s}?`,
-        speak: `Measure both! Tap the cubes on each row. How much longer is the ${objA.s} than the ${objB.s}?`,
+        speak: `How much longer is the ${objA.s} than the ${objB.s}?`,
+        coach: 'Tap the cubes on each row to measure both.',
         measure: { cells, items: [{ emoji: objA.e, len: long }, { emoji: objB.e, len: short }] },
         options: optionSet(diff, [diff - 1, diff + 1, diff - 2, diff + 2, long, short].filter(v => v > 0), 4, 1),
         answer: diff,
@@ -921,7 +928,8 @@ const Generators = {
     return {
       type: 'options',
       text: `How many cubes long is the ${objA.s}?`,
-      speak: `How many cubes long is the ${objA.s}? Tap the cubes to count them!`,
+      speak: `How many cubes long is the ${objA.s}?`,
+      coach: 'Tap the cubes to count them!',
       measure: { cells, items: [{ emoji: objA.e, len: lenA }] },
       // The grid width is never a plausible answer once the row only shows the cubes that
       // cover the object — offering it taught children to count the boxes instead.
@@ -1006,12 +1014,13 @@ const Generators = {
       : ['twoMul', 'minus', 'bracket', 'subDiv'];
     const big = level >= 4;
     const kind = pick(kinds);
-    let a, b, c, d, text, speak, visualText, answer, trap;
+    let a, b, c, d, text, speak, visualText, answer, trap, coach;
     if (kind === 'addMul') {
       b = rand(2, big ? 9 : 5); c = rand(2, big ? 9 : 6); a = rand(1, 9);
       answer = a + b * c; trap = (a + b) * c;
       text = `${a} + ${b} × ${c} = ?`;
-      speak = `What is ${a} plus ${b} times ${c}? Do the multiplication first!`;
+      speak = `What is ${a} plus ${b} times ${c}?`;
+      coach = 'Do the multiplication first.';
     } else if (kind === 'subDiv') {
       c = rand(2, 6);
       const q = rand(2, big ? 9 : 6);
@@ -1020,7 +1029,8 @@ const Generators = {
       a = c * (q + k);
       answer = a - q; trap = k;
       text = `${a} − ${b} ÷ ${c} = ?`;
-      speak = `What is ${a} minus ${b} divided by ${c}? Do the division first!`;
+      speak = `What is ${a} minus ${b} divided by ${c}?`;
+      coach = 'Do the division first.';
     } else if (kind === 'mulAdd') {
       a = rand(2, big ? 9 : 6); b = rand(2, big ? 9 : 6); c = rand(1, 9);
       answer = a * b + c; trap = a * (b + c);
@@ -1035,7 +1045,8 @@ const Generators = {
       a = rand(2, 6); b = rand(2, 6); c = rand(2, 5); d = rand(2, 5);
       answer = a * b + c * d; trap = (a + c) * (b + d);
       text = `${a} × ${b} + ${c} × ${d} = ?`;
-      speak = `What is ${a} times ${b}, plus ${c} times ${d}? Do both multiplications first!`;
+      speak = `What is ${a} times ${b}, plus ${c} times ${d}?`;
+      coach = 'Do both multiplications first.';
     } else {
       a = rand(6, big ? 20 : 12); b = rand(2, a - 2); c = rand(2, big ? 9 : 5);
       answer = (a - b) * c; trap = a - b * c;
@@ -1050,6 +1061,7 @@ const Generators = {
       options: optionSet(answer, [trap, answer - 1, answer + 1, answer - 2, answer + 2, answer + 10].filter(v => v > 0), 4, 1),
       answer,
       trap,
+      coach,
     };
   },
 };
@@ -1135,6 +1147,22 @@ function renderHome() {
   }
 }
 
+/* A screen reader cannot see a picture, and twenty unlabelled apples read as noise. So the
+   container says what kind of picture it is — and never how many, because in these games the
+   count is the answer the child is working out. */
+function visualAria(q) {
+  const noun = e => { const o = OBJECTS.find(x => x.e === e); return o ? o.w : 'objects'; };
+  if (q.compare) return `Two groups of ${noun(q.compare.emoji)} to compare`;
+  if (q.objects) return q.objects.crossed
+    ? `A group of ${noun(q.objects.emoji)}, some crossed out`
+    : `A group of ${noun(q.objects.emoji)} to count`;
+  if (q.groups) return `${q.groups.count} groups of ${noun(q.groups.emoji)}`;
+  if (q.pairs) return `${noun(q.pairs.emoji)} lined up in pairs`;
+  if (q.measure) return 'Rows of cubes to measure';
+  if (q.chart) return `A picture graph with ${q.chart.length} columns`;
+  return null;
+}
+
 function renderQuestion(q) {
   $('#question-text').textContent = q.text;
   $('#level-badge').textContent = `Level ${State.level}`;
@@ -1144,6 +1172,9 @@ function renderQuestion(q) {
   const options = $('#options');
   visual.innerHTML = '';
   options.innerHTML = '';
+  const aria = visualAria(q);
+  if (aria) { visual.setAttribute('role', 'img'); visual.setAttribute('aria-label', aria); }
+  else { visual.removeAttribute('role'); visual.removeAttribute('aria-label'); }
 
   if (q.type === 'compare') {
     const wrap = document.createElement('div');
@@ -1152,6 +1183,7 @@ function renderQuestion(q) {
       const panel = document.createElement('button');
       panel.className = 'compare-panel';
       panel.dataset.side = side;
+      panel.setAttribute('aria-label', side === 'left' ? 'The left group' : 'The right group');
       const n = q.compare[side];
       for (let i = 0; i < n; i++) {
         const s = document.createElement('span');
@@ -1506,9 +1538,18 @@ function nextQuestion() {
   State.answered = false;
   State.misses = 0;
   State.pending = null;
-  State.question = Generators[State.mode](State.level);
-  renderQuestion(State.question);
-  Speech.say(State.question.speak, 'question');
+  const q = Generators[State.mode](State.level);
+  State.question = q;
+  renderQuestion(q);
+  // A strategy is taught once per game and then belongs to the child. It goes out as a single
+  // sentence with the question: queued behind it, the next question would have dropped it the
+  // moment a child answered quickly.
+  if (q.coach && !State.coached[State.mode]) {
+    State.coached[State.mode] = true;
+    Speech.say(`${q.speak} ${q.coach}`, 'question');
+  } else {
+    Speech.say(q.speak, 'question');
+  }
 }
 
 function startMode(modeId) {

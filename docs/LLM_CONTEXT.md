@@ -39,6 +39,12 @@ repository root.
    - **Hold (long-press) a home card to hear its name** without starting the game — a pre-reader
      browses the grid by ear; a tap still starts it at once. Tapping the objects in a picture stops
      once the question has been answered, so the count-along cannot keep talking.
+   - **A strategy is taught once, then it stops.** Put it in `q.coach`, never in the question
+     wording — otherwise the game narrates itself at a child on every single question.
+   - **Pictures are described, not dictated.** `#visual` carries `role="img"` plus an `aria-label`
+     naming the *kind* of picture ("A group of apples to count") and never the count, because the
+     count is the answer. Compare panels are "The left group"/"The right group". Tap targets stay at
+     or above 48px and must not be squeezable (`.icon-btn { flex: 0 0 auto }`).
    - A wrong tap never punishes, but a child must never be stuck: on the **second** wrong tap
      of a question the correct option gets a green glow (`reveal`) and is described aloud.
    - Question wording must be grammatical with the content tables (use `OBJECTS[].s` for
@@ -84,9 +90,10 @@ repository root.
 
 Everything is plain script (no modules) with these subsystems, top to bottom:
 
-- **Helpers** — `rand`, `pick`, `shuffle`, `$`, `inkFor(hex)` (WCAG-luminance ink picker); content
-  tables `OBJECTS` (`{ e: emoji, w: plural word, s: singular word }`) and `SHAPES`;
-  `PRAISES`/`ENCOURAGE` phrase lists.
+- **Helpers** — `rand`, `pick`, `shuffle`, `$`, `inkFor(hex)` (WCAG-luminance ink picker),
+  `placeParts(places)` (place-value sum wording, zero places dropped), `visualAria(q)` (the spoken
+  description of a picture); content tables `OBJECTS` (`{ e: emoji, w: plural word, s: singular
+  word }`) and `SHAPES`; `PRAISES`/`PRAISE_EMOJI`/`ENCOURAGE` phrase lists.
 - **`Sound`** — synthesized effects via Web Audio (`tone()` primitive + `pop`, `count`,
   `correct`, `wrong`, `fanfare`). No audio files. `Sound.enabled` persisted in
   `localStorage['nl_sound']`. AudioContext is created/resumed on first pointer interaction
@@ -137,6 +144,7 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
 | `q.type`      | `'options'` (default button grid), `'compare'` (two side panels), `'shapes'` (shape buttons), `'count'`/`'add'`/`'sub'` (tappable objects + options) |
 | `q.text`      | On-screen question text (big heading) |
 | `q.speak`     | Text spoken aloud — write it for a child, not a reader |
+| `q.coach`     | Optional strategy line. Spoken **once per game per session**, fused onto the first question so it cannot be dropped by the queue; put it here rather than in `q.speak`, or the game narrates every single question |
 | `q.answer`    | Correct answer; for `options` compared with `===` to the option value (numbers or strings like `'ODD'`, `'7:30'`) |
 | `q.options`   | Array of option values → rendered as big buttons |
 | `q.objects`   | `{ emoji, total, crossed, split? }` — tappable count-along objects; `crossed` rightmost items stay visible, faded with a red strike line, and a `= ❓` cue follows a `type: 'sub'` row; `split` inserts a ➕ after N items (addition) |
@@ -241,18 +249,22 @@ audits at the end:
   `compare`, `clock`, `measure`), wording never says "0 hundreds" or prints a `+ 0` term, a picture
   graph prints no digits in its question, odd/even above the pairing picture marks the units digit,
   `find` at level 4 keeps its neighbours a readable distance apart, sequences ask in both directions
-  and the answer obeys the rule — and for every arithmetic question the **shown equation is
+  and the answer obeys the rule; no strategy clause is baked into `q.speak` (it must arrive as
+  `q.coach`) — and for every arithmetic question the **shown equation is
   re-evaluated by a small recursive-descent parser and compared to `q.answer`**;
 - **DOM** — `renderQuestion` must not throw, exactly one button may match the answer, option text
   must clear 3:1 against its fill, crossed objects must still be visible after all CSS animations
   finish, measure rows must draw exactly `len` cubes and never an empty slot, place value must
   highlight one and only one digit — the one it asks about — and compare panels must be equal width
   and show the counts they claim (`document.getAnimations().forEach(a => a.finish())` before
-  measuring, or `popIn`'s `scale(0)` start frame collapses every rect);
+  measuring, or `popIn`'s `scale(0)` start frame collapses every rect). Each picture must carry
+  `role="img"` and an `aria-label` that says what kind of picture it is without stating a count, and
+  compare panels must each have an accessible name;
 - **speech** — swaps in a fake `speechSynthesis` (no audio) and asserts the queue: a count-along tap
   never interrupts the instruction, queued counts collapse to the newest and play after it, praise
   waits behind an unfinished question but cuts in once it is answered, `stop()` empties everything,
-  and tapping objects after answering does nothing at all;
+  and tapping objects after answering does nothing at all. It also plays six questions of one game
+  and asserts the `q.coach` strategy line is heard exactly once;
 - **logic** — exercises the pure helpers (`sameAmount`, `inkFor` really picks the readable ink of
   the two, `fracOptions` never offers an equivalent form for every denominator in use), checks each
   mode has a `REDIRECT` hint, and clicks `1/2` under a `6/12` pizza expecting to be told well;
@@ -269,7 +281,7 @@ Some assertions are geometric, and a browser surface that reports `innerWidth ==
 in-app browser does) cannot answer them — those count themselves as **skipped** and the summary says
 how many, so a green page never claims to have tested fit. Run the page in a normal window for the
 layout checks. Run the page in a normal window for the
-layout checks. Default is 60 questions per mode per level ≈ 89,000 checks in ~42s; raise `runs` to
+layout checks. Default is 60 questions per mode per level ≈ 101,800 checks in ~7s; raise `runs` to
 widen the sweep. **Run this page after any generator change** — there is no other test harness.
 
 Manual checks still needed: correct/incorrect answers score gently, back button stops speech,

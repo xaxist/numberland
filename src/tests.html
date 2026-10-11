@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Numberland — self tests</title>
-<link rel="stylesheet" href="css/style.css?v=2026-10-12">
+<link rel="stylesheet" href="css/style.css?v=2026-10-12-2">
 <style>
   body { font-family: ui-monospace, Menlo, Consolas, monospace; color: #212529; background: #fff; padding: 20px; }
   #summary { font-size: 18px; font-weight: 700; margin: 12px 0; }
@@ -53,7 +53,7 @@
 </div>
 
 <script>window.NL_TEST = true;</script>
-<script src="js/game.js?v=2026-10-12"></script>
+<script src="js/game.js?v=2026-10-12-2"></script>
 <script>
 /* Audits the pure generators and the DOM they produce. Nothing here mutates progress:
    init() is skipped (NL_TEST) and audio is off, so no timers, speech or storage writes run. */
@@ -130,6 +130,10 @@ function audit(id, level, q) {
   ok(typeof q.speak === 'string' && q.speak.length > 0, `${at}: empty speak`, q);
   ok(!/NaN|undefined/.test(q.text + q.speak), `${at}: NaN or undefined shown`, q);
   ok(q.answer !== undefined && q.answer !== null, `${at}: no answer`, q);
+  ok(q.coach === undefined || (typeof q.coach === 'string' && q.coach.length > 4), `${at}: malformed coach line`, q);
+  // strategy talk belongs in q.coach (said once), not in every question
+  ok(!/Watch out|Line up|Do the multiplication|Do the division|Do both multiplications|Add up the biggest|Tap them to count|Tap the cubes/.test(q.speak),
+    `${at}: a strategy line is repeated in every question`, q);
 
   if (q.options) {
     ok(Array.isArray(q.options) && q.options.length >= 2, `${at}: fewer than 2 options`, q);
@@ -212,6 +216,13 @@ function domAudit(id, level, q) {
   try { renderQuestion(q); } catch (e) { failures.push(`${id} L${level}: renderQuestion threw ${e.message}`); return; }
 
   const btns = [...document.querySelectorAll('#options .opt-btn')];
+  // a screen reader must learn what a picture IS without learning the answer
+  if (q.objects || q.compare || q.measure || q.chart || q.groups || q.pairs) {
+    const vis = document.getElementById('visual');
+    const label = vis.getAttribute('aria-label') || '';
+    ok(vis.getAttribute('role') === 'img' && label.length > 8, `${id} L${level}: the picture is invisible to a screen reader`, q);
+    if (q.objects || q.compare || q.measure) ok(!/\d/.test(label), `${id} L${level}: the picture label states a count: ${label}`, q);
+  }
   if (q.options) {
     checks++;
     if (btns.length !== q.options.length) failures.push(`${id} L${level}: rendered ${btns.length} of ${q.options.length} options`);
@@ -269,6 +280,7 @@ function domAudit(id, level, q) {
   if (q.compare) {
     const panels = [...document.querySelectorAll('#visual .compare-panel')];
     ok(panels.length === 2, `${id} L${level}: ${panels.length} compare panels`, q);
+    ok(panels.every(p => (p.getAttribute('aria-label') || '').length > 6), `${id} L${level}: a compare panel has no accessible name`, q);
     const counts = panels.map(p => p.querySelectorAll('.obj').length);
     ok(counts[0] === q.compare.left && counts[1] === q.compare.right, `${id} L${level}: panels show ${counts} for ${q.compare.left}/${q.compare.right}`, q);
     if (window.innerWidth > 0) {
@@ -327,6 +339,18 @@ function speechAudit() {
   obj.click();
   ok(!obj.classList.contains('counted') && !spoken.length, 'speech: tapping objects still counts after answering');
 
+  // a strategy line is taught once per game, as part of the question, then it stops narrating
+  const realSay = Speech.say;
+  const heard = [];
+  Speech.say = function (text, kind) { heard.push(text); return realSay.call(this, text, kind); };
+  State.mode = 'count'; State.level = 2; State.coached = {}; Speech.current = null; Speech.pending = [];
+  for (let i = 0; i < 6; i++) nextQuestion();
+  Speech.say = realSay;
+  const coached = heard.filter(t => t.includes('Tap them to count')).length;
+  ok(coached === 1, `coach: the strategy hint was spoken ${coached} times across six questions of one game`);
+  ok(heard[heard.length - 1].startsWith('How many'), 'coach: a plain question lost its own wording');
+  State.coached = {};
+
   Speech.enabled = saved.en; Speech.current = saved.cur; Speech.pending = saved.pend;
   State.stars = saved.stars; State.trophies = saved.trophies; State.save();
   if (realProp) Object.defineProperty(window, 'speechSynthesis', realProp);
@@ -362,6 +386,14 @@ function logicAudit() {
   ok(pp.text === '3 hundreds + 1 one = ?', `placeParts: zero place not dropped (${pp.text})`);
   ok(pp.speak === 'What is 3 hundreds and 1 one?', `placeParts: wording (${pp.speak})`);
   ok(pp.visual === '300 + 1 = ❓', `placeParts: equation (${pp.visual})`);
+
+  const sheet = [...document.styleSheets].find(s => (s.href || '').includes('style.css'));
+  const iconRule = sheet && [...sheet.cssRules].find(r => r.selectorText === '.icon-btn');
+  if (iconRule) {
+    ok(parseFloat(iconRule.style.width) >= 48, `a11y: icon buttons are ${iconRule.style.width} across, under the 48px tap floor`);
+    ok(iconRule.style.flexShrink === '0' || /flex:\s*0 0/.test(iconRule.style.cssText),
+      'a11y: a narrow top bar can squeeze the icon buttons below their size');
+  } else ok(false, 'a11y: could not read the .icon-btn rule to check the tap floor');
 
   // the Phase 2 acceptance test: a child who taps 1/2 under a 6/12 pizza must be celebrated
   const saved = { stars: State.stars, trophies: State.trophies, mode: State.mode, level: State.level, launch: Confetti.launch };
