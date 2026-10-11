@@ -554,6 +554,39 @@ const Generators = {
     return q;
   },
 
+  doublehalf(level) {
+    const obj = pick(OBJECTS);
+    if (Math.random() < 0.5) {
+      const n = level === 1 ? rand(1, 5) : level === 2 ? rand(2, 8) : level === 3 ? rand(5, 12) : rand(13, 49);
+      const answer = n * 2;
+      const q = {
+        type: 'options',
+        text: `What is double ${n}?`,
+        speak: `What is double ${n}? Two lots of ${n}.`,
+        options: nearOptions(answer, level === 1 ? 3 : 4, [-n, -2, -1, 1, 2, 3], 1),
+        answer,
+      };
+      if (answer <= 20) q.objects = { emoji: obj.e, total: answer, crossed: 0, split: n };
+      else q.visualText = `${n} + ${n} = ❓`;
+      return q;
+    }
+    const whole = level === 1 ? pick([2, 4, 6, 8, 10])
+      : level === 2 ? pick([4, 6, 8, 10, 12, 16, 18, 20])
+      : level === 3 ? pick([12, 14, 16, 18, 20, 24, 30, 40])
+      : pick([22, 24, 26, 28, 32, 34, 46, 48, 56, 68, 74, 86, 98]);
+    const answer = whole / 2;
+    const q = {
+      type: 'options',
+      text: `What is half of ${whole}?`,
+      speak: `What is half of ${whole}? Share ${whole} between two.`,
+      options: nearOptions(answer, level === 1 ? 3 : 4, [answer, -2, -1, 1, 2, 4], 1),
+      answer,
+    };
+    if (answer <= 10) q.groups = { count: 2, size: answer, emoji: obj.e };
+    else q.visualText = `${whole} ÷ 2 = ❓`;
+    return q;
+  },
+
   placevalue(level) {
     if (level >= 4) {
       const digits = { th: rand(1, 9), h: rand(0, 9), t: rand(0, 9), o: rand(1, 9) };
@@ -852,6 +885,7 @@ const MODES = [
   { id: 'measure',    name: 'Measure',      desc: 'How many cubes long?',    icon: '📏', color: '#7048e8' },
   { id: 'data',       name: 'My Graph',     desc: 'Read the picture graph',  icon: '📊', color: '#12b886' },
   { id: 'money',      name: 'Treasure',     desc: 'Count the coins',         icon: '🪙', color: '#fab005' },
+  { id: 'doublehalf', name: 'Double or Half', desc: 'Twice as many',           icon: '🌗', color: '#0c8599' },
   { id: 'missing',    name: 'Missing No.',  desc: 'Solve the gap',           icon: '❓', color: '#20c997' },
   { id: 'oddeven',    name: 'Odd or Even',  desc: 'Pair them up',            icon: '👯', color: '#d6336c' },
   { id: 'multiply',   name: 'Multiply',     desc: 'Times tables fun',        icon: '✖️', color: '#f03e3e' },
@@ -869,6 +903,8 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
   $(`#${id}`).classList.remove('hidden');
   $('#btn-back').classList.toggle('hidden', id === 'screen-home');
+  // The logo and the back button share the top-left slot; on a phone they do not both fit.
+  $('#logo').classList.toggle('hidden', id !== 'screen-home');
 }
 
 function bump(el) {

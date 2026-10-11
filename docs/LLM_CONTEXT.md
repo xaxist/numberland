@@ -6,7 +6,7 @@ project is, how it is structured, and the conventions to follow when changing it
 ## What this is
 
 **Numberland** is a static web game that teaches maths to children aged **3–10** with
-**19 games** on one screen. It is a single-page app with zero dependencies and no build
+**20 games** on one screen. It is a single-page app with zero dependencies and no build
 step: plain HTML, CSS, and JavaScript. It is deployed as-is to **GitHub Pages** from the
 repository root.
 
@@ -31,6 +31,8 @@ repository root.
    - In-game navigation is a single **back button** (`#btn-back`, ⬅️) in the top-left of the
      top bar — no home button. It is hidden on the home screen and returns the child to the
      game grid from the game and reward screens.
+   - The **`#logo` is hidden while playing** (`showScreen` swaps it with the back button in the
+     same top-left slot) — on a phone the logo and the back button do not both fit.
    - Speech and pending question timers must be cancelled when leaving the game screen.
    - A wrong tap never punishes, but a child must never be stuck: on the **second** wrong tap
      of a question the correct option gets a green glow (`reveal`) and is described aloud.
@@ -108,7 +110,7 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
 | `q.compare`   | `{ left, right, emoji }` — two panels, `q.answer` is `'left'`/`'right'` |
 | `q.shapeOptions` | Array of `{ e, w }` shape objects |
 
-### The 19 games (home grid order = difficulty ladder, easiest → hardest)
+### The 20 games (home grid order = difficulty ladder, easiest → hardest)
 
 The grid order **is** the curriculum: index 0 is the easiest concept for a 3-year-old and the
 last is the hardest for a 10-year-old. When adding a mode, insert it where its concept sits on
@@ -125,16 +127,17 @@ this ladder rather than appending it.
 | 7 | `measure` | Non-standard measurement | 5–8 | compare two lengths, to 20 cubes |
 | 8 | `data` | Picture graphs: most/fewest/how many/how many more | 5–9 | 4 categories, up to 10 |
 | 9 | `money` | Adding coin values | 5–9 | values to 50, 6 coins |
-| 10 | `missing` | Missing number / fact families | 6–9 | 3-digit equations |
-| 11 | `oddeven` | Odd/even by pairing | 6–9 | numbers to 999 |
-| 12 | `multiply` | Times tables, grouped objects | 6–10 | 11–19 × 3–9, tables to 12 |
-| 13 | `patterns` | Number sequences (+ rules, doubling) | 6–10 | step up to 10 and doubling from 5 |
-| 14 | `divide` | Sharing into equal groups | 7–9 | tables to 9, grouping shown |
-| 15 | `clock` | Reading an analog clock | 7–10 | minutes in 5s |
-| 16 | `placevalue` | Tens, hundreds, digit values | 7–10 | thousands + "value of the digit" |
-| 17 | `fraction` | Unit fractions from a shaded pie | 7–10 | twelfths |
-| 18 | `round` | Rounding | 8–10 | nearest 1000 |
-| 19 | `mixed` | Order of operations (brackets first) | 8–10 | `a × b + c × d`, `(a − b) × c`, `a − b ÷ c` |
+| 10 | `doublehalf` | Doubling and halving | 5–8 | double 2-digit to 49, half of 2-digit to 98 |
+| 11 | `missing` | Missing number / fact families | 6–9 | 3-digit equations |
+| 12 | `oddeven` | Odd/even by pairing | 6–9 | numbers to 999 |
+| 13 | `multiply` | Times tables, grouped objects | 6–10 | 11–19 × 3–9, tables to 12 |
+| 14 | `patterns` | Number sequences (+ rules, doubling) | 6–10 | step up to 10 and doubling from 5 |
+| 15 | `divide` | Sharing into equal groups | 7–9 | tables to 9, grouping shown |
+| 16 | `clock` | Reading an analog clock | 7–10 | minutes in 5s |
+| 17 | `placevalue` | Tens, hundreds, digit values | 7–10 | thousands + "value of the digit" |
+| 18 | `fraction` | Unit fractions from a shaded pie | 7–10 | twelfths |
+| 19 | `round` | Rounding | 8–10 | nearest 1000 |
+| 20 | `mixed` | Order of operations (brackets first) | 8–10 | `a × b + c × d`, `(a − b) × c`, `a − b ÷ c` |
 
 ### Progression
 
