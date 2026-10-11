@@ -30,12 +30,24 @@
 <div id="log"></div>
 
 <div id="harness">
-  <div id="level-badge" class="level-badge">Level 1</div>
-  <div id="streak-dots" class="streak-dots"></div>
-  <h2 id="question-text" class="question-text"></h2>
-  <div id="feedback" class="feedback"></div>
-  <div id="visual" class="visual"></div>
-  <div id="options" class="options"></div>
+  <button id="btn-back" class="icon-btn hidden" aria-label="Back">⬅️</button>
+  <div id="logo" class="logo">Numberland</div>
+  <section id="screen-home" class="screen hidden">
+    <div id="mode-grid" class="mode-grid"></div>
+  </section>
+  <section id="screen-game" class="screen">
+    <div class="game-head">
+      <div id="level-badge" class="level-badge">Level 1</div>
+      <div id="streak-dots" class="streak-dots"></div>
+    </div>
+    <div class="question-row">
+      <h2 id="question-text" class="question-text"></h2>
+      <button id="btn-repeat" class="icon-btn big" aria-label="Hear the question">🔊</button>
+    </div>
+    <div id="feedback" class="feedback" aria-live="polite"></div>
+    <div id="visual" class="visual"></div>
+    <div id="options" class="options"></div>
+  </section>
   <div id="star-counter" class="counter">⭐ <span id="star-count">0</span></div>
   <div id="trophy-counter" class="counter">🏆 <span id="trophy-count">0</span></div>
 </div>
@@ -250,8 +262,9 @@ function speechAudit() {
   const realProp = Object.getOwnPropertyDescriptor(window, 'speechSynthesis');
   const fake = { speak(u) { spoken.push(u.text); fake.cur = u; }, cancel() {}, getVoices() { return []; } };
   Object.defineProperty(window, 'speechSynthesis', { value: fake, configurable: true });
-  const saved = { en: Speech.enabled, cur: Speech.current, pend: Speech.pending };
+  const saved = { en: Speech.enabled, cur: Speech.current, pend: Speech.pending, stars: State.stars, trophies: State.trophies };
   Speech.enabled = true; Speech.current = null; Speech.pending = [];
+  State.stars = 0; State.trophies = 0;
 
   Speech.say('How many apples? Tap them to count, then tap the answer!', 'question');
   Speech.say('3', 'count'); Speech.say('1', 'count'); Speech.say('5', 'count');
@@ -282,6 +295,7 @@ function speechAudit() {
   ok(!obj.classList.contains('counted') && !spoken.length, 'speech: tapping objects still counts after answering');
 
   Speech.enabled = saved.en; Speech.current = saved.cur; Speech.pending = saved.pend;
+  State.stars = saved.stars; State.trophies = saved.trophies; State.save();
   if (realProp) Object.defineProperty(window, 'speechSynthesis', realProp);
 }
 
@@ -328,6 +342,72 @@ function logicAudit() {
   State.save();
 }
 
+/* ---------- progress, mastery and the tap-to-skip hand-off ---------- */
+function progressAudit() {
+  const saved = {
+    raw: localStorage.getItem('nl_progress'), stars: State.stars, trophies: State.trophies,
+    mode: State.mode, level: State.level, streak: State.streak, launch: Confetti.launch,
+  };
+  Confetti.launch = () => {};
+  const stopClock = () => { clearTimeout(State.timer); State.timer = null; State.pending = null; };
+  const fbText = () => document.getElementById('feedback').textContent;
+
+  localStorage.setItem('nl_progress', '{not json');
+  Progress.load();
+  ok(Progress.of('count').level === 1, 'progress: corrupt storage must fall back to level 1');
+
+  localStorage.setItem('nl_progress', JSON.stringify({
+    v: 1, games: { count: { level: 99, mastered: 'yes' }, sub: { level: 3 }, junk: 'nope' },
+  }));
+  Progress.load();
+  ok(Progress.of('count').level === 1, 'progress: a level above the ceiling was not clamped');
+  ok(Progress.of('count').mastered === true, 'progress: a stored mastery flag was lost');
+  ok(Progress.of('sub').level === 3, 'progress: a remembered level was not restored');
+  ok(Progress.of('multiply').level === 1, 'progress: a never-played game should start easy');
+  ok(typeof Progress.of('junk').level === 'number', 'progress: a malformed record entry broke the shape');
+
+  State.stars = 0; State.trophies = 0;
+  startMode('sub'); stopClock();
+  ok(State.level === 3, 'progress: tapping a card did not resume the remembered level');
+  ok(document.getElementById('level-badge').textContent === 'Level 3', 'progress: the badge disagrees with the resumed level');
+  goBack();
+  ok(Progress.of('sub').level === 3, 'progress: leaving a game lost its level');
+
+  // the top level must celebrate, once
+  Progress.games = {};
+  State.stars = 0; State.mode = 'add'; State.level = 4; State.streak = 2; State.misses = 0; State.answered = false;
+  handleCorrect(); stopClock();
+  ok(Progress.of('add').mastered === true, 'progress: three in a row at level 4 crowned nobody');
+  ok(/Champion!/.test(fbText()), 'progress: no champion celebration on screen');
+  handleCorrect(); stopClock();
+  ok(!/Champion!/.test(fbText()), 'progress: the champion event fired twice for one game');
+  State.streak = 3; handleCorrect(); stopClock();
+  ok(State.level === 4, 'progress: the level went past the ceiling');
+
+  // a tap on the picture moves on, but never inside the dwell window
+  let fired = 0;
+  afterFeedback(() => fired++);
+  ok(skipFeedback() === false && fired === 0, 'progress: a tap inside 600ms skipped the celebration');
+  State.pending.start = Date.now() - 700;
+  ok(skipFeedback() === true && fired === 1, 'progress: tapping the picture did not move on');
+  ok(skipFeedback() === false && fired === 1, 'progress: the hand-off ran twice');
+  stopClock();
+
+  Progress.of('add').level = 2;
+  Progress.save();
+  ok(JSON.parse(localStorage.getItem('nl_progress')).games.add.level === 2, 'progress: the record did not persist');
+  Progress.clear();
+  ok(localStorage.getItem('nl_progress') === null && Object.keys(Progress.games).length === 0,
+    'progress: Reset Progress must clear the per-game record too');
+
+  document.getElementById('feedback').innerHTML = '';
+  if (saved.raw === null) localStorage.removeItem('nl_progress'); else localStorage.setItem('nl_progress', saved.raw);
+  Progress.load();
+  Object.assign(State, { stars: saved.stars, trophies: saved.trophies, mode: saved.mode, level: saved.level, streak: saved.streak, answered: false });
+  Confetti.launch = saved.launch;
+  stopClock();
+}
+
 function run() {
   const t0 = performance.now();
   checks = 0; failures.length = 0; worstContrast = 99; layoutSkipped = 0;
@@ -349,6 +429,7 @@ function run() {
 
   speechAudit();
   logicAudit();
+  progressAudit();
 
   const s = $('#summary');
   const questions = MODES.length * 4 * runs;

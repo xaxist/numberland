@@ -167,6 +167,23 @@ pie celebrates; in Place value a `2123` question marks exactly one digit.
 
 ### Phase 3 — the motivation loop *(RC4)*
 
+> **Status: done 2026-10-12.** Pre-change snapshot in `backup/2026-10-12-pre-phase3/`. One additive
+> key, `nl_progress = { v:1, games:{ [id]: { level, mastered } } }`, resumed silently on tap and
+> saved on every level change and on back. A 3-streak at Level 4 now crowns the game (👑 + confetti +
+> fanfare + spoken "You are the champion of <game>!") **once per game**, so the ceiling is neither
+> silent nor farmable. Tapping the picture skips the hand-off, with a 600 ms dwell floor so a fast
+> second tap cannot steal the celebration. Reset Progress clears the record.
+>
+> Two deliberate omissions from the plan as written. **No per-card record line** (`Lv 3 · 🔥4`): the
+> owner has twice asked for the grid to stay exactly as it is, and a remembered level needs no chrome
+> to work — nothing is displayed about difficulty, the child simply starts where they left off.
+> **No "hinted" flag on revealed answers** (open question 3 below): the only record kept is
+> `level`/`mastered`, both honest without it; if a stats screen is ever built, that is when a revealed
+> answer should be marked and scored differently.
+> Verified by the new **progress** audit in `src/tests.html` (18 assertions) and by clicking through
+> the real game: the badge reads "Level 4" on re-entry, the crown fires on the third correct answer at
+> the top and never again, and Reset empties `nl_progress`.
+
 One additive key, `nl_progress = { v:1, games:{ [id]: { level, best, tried, firstTry, at } }, last:{…} }`,
 no migration, and Reset must `removeItem('nl_progress')` too. Resume the stored level silently on tap —
 **no new UI, no re-sorting `MODES`, no lock** (the grid order *is* the curriculum). Add a Level 4
@@ -239,11 +256,22 @@ units-digit rule, not dots.
 
 ## 7. Open questions for the owner
 
-1. **Zoom on phones** — keep `user-scalable=no` (layout safety for a child who pinches) or drop it
-   (accessibility floor)? If dropped, the layout must survive 200% zoom first.
-2. **Silent level resume** — is starting a game at the child's remembered level acceptable, given
-   nothing is displayed about it? Phase 3 assumes yes, with no new UI.
-3. **Hinted answers and stars** — pay, don't pay, or pay but mark the record? The plan recommends
-   the third.
-4. **Sequencing** — ship Phase 0 alone as a quick release (it is independently valuable and touches
-   no generator), or batch Phase 0+1?
+1. **Zoom on phones — still open.** `user-scalable=no` was left in place: the layout was never
+   tested at 200% zoom, and a child who pinches and loses the game is a real failure mode. Contrast
+   was fixed instead, which was the urgent part. Revisit if a device audit says the layout survives
+   zoom.
+2. **Silent level resume — resolved, shipped in Phase 3.** Level is remembered per game and resumed
+   with no new UI, no locks and no re-sorting of the grid.
+3. **Hinted answers and stars — resolved as "change nothing".** The reveal is the never-stuck
+   guarantee, it cannot feed a level-up (`missQuestion` zeroes the streak), and there is no per-game
+   stat for a "hinted" flag to make honest.
+4. **Sequencing — resolved.** Phases shipped as four separate commits, each verified and deployed on
+   its own.
+
+## 8. What is left
+
+The Low/polish list (§1) is untouched: `data` still prints the counts under its bars so the graph
+need not be read, `patterns` still only ever asks "What comes next?", `find` Level 4 distractors are
+±3 apart, "0 hundreds" is still grammatically wrong, the ❓ glyph is both the Missing No. icon and the
+gap marker, and `oddeven` loses its pairing picture above 16. None of them mislead a child about
+maths, which is why the debate ranked them below everything shipped above.

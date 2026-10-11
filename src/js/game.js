@@ -241,11 +241,49 @@ const State = {
   answered: false,
   question: null,
   timer: null,
+  pending: null,
   save() {
     localStorage.setItem('nl_stars', String(this.stars));
     localStorage.setItem('nl_trophies', String(this.trophies));
   },
 };
+
+/* Per-game progress in one new key. Nothing migrates: an absent or unreadable value just means
+   "start at level 1", and stars/trophies keep living where they always did. */
+const Progress = {
+  KEY: 'nl_progress',
+  games: {},
+  load() {
+    this.games = {};
+    let raw = null;
+    try { raw = JSON.parse(localStorage.getItem(this.KEY) || 'null'); } catch (e) { raw = null; }
+    const games = raw && raw.games;
+    if (!games || typeof games !== 'object') return;
+    for (const id of Object.keys(games)) {
+      const g = games[id] || {};
+      this.games[id] = {
+        level: g.level >= 1 && g.level <= 4 ? Math.floor(g.level) : 1,
+        mastered: !!g.mastered,
+      };
+    }
+  },
+  of(id) {
+    return this.games[id] || (this.games[id] = { level: 1, mastered: false });
+  },
+  save() {
+    localStorage.setItem(this.KEY, JSON.stringify({ v: 1, games: this.games }));
+  },
+  clear() {
+    this.games = {};
+    localStorage.removeItem(this.KEY);
+  },
+};
+Progress.load();
+
+function modeName(id) {
+  const m = MODES.find(x => x.id === id);
+  return m ? m.name : 'Numberland';
+}
 
 /* ---------- question generators ---------- */
 function numberOptions(correct, count, min, max) {
@@ -1345,19 +1383,32 @@ function handleCorrect() {
   State.save();
   updateCounters(true);
 
+  const game = Progress.of(State.mode);
   const leveledUp = State.streak >= 3 && State.level < 4;
+  // Three in a row at the very top used to be met with silence, because there is no level
+  // left to reach. Being the champion of a game is its own milestone, celebrated once.
+  const champion = !leveledUp && State.streak >= 3 && State.level === 4 && !game.mastered;
   if (leveledUp) {
     State.level++;
     State.streak = 0;
+  } else if (champion) {
+    game.mastered = true;
+    State.streak = 0;
   }
+  game.level = State.level;
+  Progress.save();
 
   const fb = $('#feedback');
-  fb.innerHTML = `<div class="fb-emoji">${leveledUp ? '🏅' : pick(PRAISE_EMOJI)}</div><div class="fb-word">${leveledUp ? 'Level up!' : pick(PRAISES)}</div>`;
+  fb.innerHTML = `<div class="fb-emoji">${leveledUp ? '🏅' : champion ? '👑' : pick(PRAISE_EMOJI)}</div><div class="fb-word">${leveledUp ? 'Level up!' : champion ? 'Champion!' : pick(PRAISES)}</div>`;
 
   if (leveledUp) {
     Confetti.launch(150);
     Sound.fanfare();
     Speech.say(`Level up! Welcome to level ${State.level}!`, 'answer');
+  } else if (champion) {
+    Confetti.launch(220);
+    Sound.fanfare();
+    Speech.say(`You are the champion of ${modeName(State.mode)}! You know this one!`, 'answer');
   } else if (State.misses > 0) {
     Speech.say('Yes! You worked that out, well done!', 'answer');
   } else {
@@ -1389,16 +1440,30 @@ function showReward() {
 function afterFeedback(done) {
   const start = Date.now();
   const tick = () => {
-    if (!Speech.busy() || Date.now() - start > 4500) { State.timer = null; done(); }
+    if (!Speech.busy() || Date.now() - start > 4500) { State.timer = null; State.pending = null; done(); }
     else State.timer = setTimeout(tick, 150);
   };
   clearTimeout(State.timer);
+  // Kept so a child who is done admiring the picture can tap it and move on.
+  State.pending = { done, start };
   State.timer = setTimeout(tick, 1600);
+}
+
+/* Dwell floor: a quick second tap on the answer must not steal the celebration. */
+function skipFeedback() {
+  const p = State.pending;
+  if (!p || Date.now() - p.start < 600) return false;
+  clearTimeout(State.timer);
+  State.timer = null;
+  State.pending = null;
+  p.done();
+  return true;
 }
 
 function nextQuestion() {
   State.answered = false;
   State.misses = 0;
+  State.pending = null;
   State.question = Generators[State.mode](State.level);
   renderQuestion(State.question);
   Speech.say(State.question.speak, 'question');
@@ -1406,7 +1471,8 @@ function nextQuestion() {
 
 function startMode(modeId) {
   State.mode = modeId;
-  State.level = 1;
+  // Silent resume: a child who reached level 4 does not replay nine warm-ups to get back there.
+  State.level = Progress.of(modeId).level;
   State.streak = 0;
   showScreen('screen-game');
   nextQuestion();
@@ -1415,6 +1481,8 @@ function startMode(modeId) {
 function goBack() {
   clearTimeout(State.timer);
   State.timer = null;
+  State.pending = null;
+  if (State.mode) { Progress.of(State.mode).level = State.level; Progress.save(); }
   $('#feedback').innerHTML = '';
   Speech.stop();
   renderHome();
@@ -1463,6 +1531,9 @@ function init() {
     Sound.pop();
     if (State.question) Speech.say(State.question.speak, 'question');
   });
+  // Tapping the picture during the hand-off moves on at once. Object taps go quiet once the
+  // question is answered, so counting along and skipping never compete.
+  $('#visual').addEventListener('click', () => { if (skipFeedback()) Sound.pop(); });
   $('#btn-keep-playing').addEventListener('click', () => {
     Sound.pop();
     nextQuestion();
@@ -1504,6 +1575,9 @@ function init() {
     State.stars = 0;
     State.trophies = 0;
     State.save();
+    Progress.clear();
+    State.level = 1;
+    State.streak = 0;
     updateCounters();
     renderHome();
     b.textContent = '✅ Progress reset!';

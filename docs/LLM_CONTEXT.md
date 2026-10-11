@@ -27,7 +27,9 @@ repository root.
    - Confetti showers only on **level completion** (3-correct streak) and **trophy milestones**
      (every 10 stars) — never on ordinary correct answers.
    - The home screen is a **single flat grid** of game cards (no age/section grouping),
-     ordered as a difficulty ladder from easiest to hardest concept.
+     ordered as a difficulty ladder from easiest to hardest concept. Every game is always
+     tappable: difficulty is remembered per game and resumed **silently** — no locks, no badges,
+     no progress text on the cards, and the grid never re-sorts itself.
    - In-game navigation is a single **back button** (`#btn-back`, ⬅️) in the top-left of the
      top bar — no home button. It is hidden on the home screen and returns the child to the
      game grid from the game and reward screens.
@@ -100,9 +102,15 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
   off. `stop()` clears the queue and the utterance; every exit from the game screen calls it.
   English voice, rate 0.95 / pitch 1.15.
 - **`Confetti`** — full-screen canvas particle shower; `launch(n)`.
-- **`State`** — `{ stars, trophies, mode, level, streak, misses, answered, question, timer }`.
+- **`State`** — `{ stars, trophies, mode, level, streak, misses, answered, question, timer, pending }`.
   Stars/trophies persist in `localStorage['nl_stars']` / `['nl_trophies']` via `State.save()`.
-  `misses` counts wrong taps on the current question and drives the reveal hint.
+  `misses` counts wrong taps on the current question and drives the reveal hint. `pending` holds the
+  not-yet-run continuation of the feedback pause so a tap on the picture can run it early.
+- **`Progress`** — per-game record in one key, `localStorage['nl_progress']`
+  (`{ v: 1, games: { [id]: { level, mastered } } }`). Additive: no migration, and unreadable or
+  out-of-range values fall back to level 1 rather than throwing. `startMode` resumes the stored
+  level silently, `handleCorrect` and `goBack` save it, and Reset Progress clears it. Nothing about
+  it is displayed on the home grid — no locks, no badges, no re-sorting.
 - **Option builders** — `numberOptions` (near-miss distractors), `optionSet` (deduped candidate
   list, works for numbers and strings), `nearOptions`, `multiplyOptions` (adjacent-multiple
   distractors), `pvOptions` (digit-swap distractors), `fracOptions` (fraction distractors — it
@@ -178,6 +186,12 @@ this ladder rather than appending it.
   between the question bar and the visuals — never an overlay on top of the answer buttons),
   chime + spoken praise, streak +1.
 - **3-streak → level up** (max level 4): confetti, fanfare, spoken "Level up!".
+- **3-streak at level 4 → champion**: the first time only, per game (`Progress…mastered`) — 👑,
+  bigger confetti, fanfare, spoken "You are the champion of <game>!". After that the top level gives
+  ordinary praise, so the crown cannot be farmed and reaching the ceiling is never silent.
+- The hand-off after an answer waits for the voice to finish (never under 1600 ms, capped at 4.5 s).
+  **Tapping the picture skips it** — but not within the first 600 ms, so a fast second tap on the
+  answer can never steal the celebration.
 - **Every 10 stars → trophy screen**: big confetti, fanfare, trophy count bumps in the top bar.
 - Wrong answer: option dims and disables, streak resets, no penalty. The **first** wrong tap speaks a
   hint from `REDIRECT[mode]` about how to look at the picture (never the answer); the second reveals.
@@ -190,8 +204,9 @@ this ladder rather than appending it.
 ### Settings modal
 
 Gear button → modal with **two independent switches** — `🔔 Sound effects` (`nl_sound`) and
-`🗣️ Voice` (`nl_voice`) — and Reset Progress (two-tap confirm; zeroes stars/trophies only, and
-leaves both sound preferences alone). Reset confirm auto-disarms after 3s and on modal close.
+`🗣️ Voice` (`nl_voice`) — and Reset Progress (two-tap confirm), which zeroes stars and trophies and
+clears `nl_progress` with them. The two sound preferences survive a reset. Reset confirm auto-disarms
+after 3s and on modal close.
 
 ## How to add a new game mode
 
@@ -217,8 +232,8 @@ The whole test suite, in the browser, with no dependencies. It sets `window.NL_T
 before loading `game.js` — which is why the auto-init at the bottom of that file is guarded by
 `if (!window.NL_TEST)` — then disables `Sound`/`Speech`, reseeds `Math.random` (mulberry32, so a
 failure is reproducible from the seed in the URL bar), and runs every generator × level × N
-questions through a **contract** and a **DOM** audit, plus one **speech** and one **logic** audit
-at the end:
+questions through a **contract** and a **DOM** audit, plus **speech**, **logic** and **progress**
+audits at the end:
 
 - **contract** — text and `speak` non-empty, no `NaN`/`undefined` leaking into wording, answer
   present and unique among the options (duplicate labels mean `revealAnswer` glows two buttons),
@@ -237,12 +252,18 @@ at the end:
   and tapping objects after answering does nothing at all;
 - **logic** — exercises the pure helpers (`sameAmount`, `inkFor` really picks the readable ink of
   the two, `fracOptions` never offers an equivalent form for every denominator in use), checks each
-  mode has a `REDIRECT` hint, and clicks `1/2` under a `6/12` pizza expecting to be told well.
+  mode has a `REDIRECT` hint, and clicks `1/2` under a `6/12` pizza expecting to be told well;
+- **progress** — runs the real flow against a DOM replica of the game screen (the harness markup
+  carries the same ids as `index.html`, so `startMode`/`goBack`/`showScreen` work here): corrupt and
+  out-of-range `nl_progress` values fall back safely, a remembered level resumes on the badge, the
+  crown fires once per game and never twice, a tap inside the dwell window cannot skip the
+  celebration, and Reset clears the record.
 
 Some assertions are geometric, and a browser surface that reports `innerWidth === 0` (the embedded
 in-app browser does) cannot answer them — those count themselves as **skipped** and the summary says
 how many, so a green page never claims to have tested fit. Run the page in a normal window for the
-layout checks. Default is 60 questions per mode per level ≈ 77,600 checks in ~14s; raise `runs` to
+layout checks. Run the page in a normal window for the
+layout checks. Default is 60 questions per mode per level ≈ 77,200 checks in ~14s; raise `runs` to
 widen the sweep. **Run this page after any generator change** — there is no other test harness.
 
 Manual checks still needed: correct/incorrect answers score gently, back button stops speech,
@@ -252,6 +273,11 @@ console has no errors.
 
 Push to `main`. GitHub Pages (repo Settings → Pages → deploy from branch `main`, `/root`)
 rebuilds in ~1 minute. Commit + push is the expected end of every change.
+
+**Cached assets:** `index.html` references `js/game.js` and `css/style.css` with no version query,
+so a browser (or Pages' own edge cache) can keep running the previous engine for a while after a
+deploy. When verifying a deploy, fetch the asset with `cache: 'reload'` (or hard-reload) before
+concluding a change did not land — this has bitten the development loop.
 
 ## Git history highlights
 
