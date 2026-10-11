@@ -518,6 +518,27 @@ function goHome() {
   showScreen('screen-home');
 }
 
+/* ---------- settings ---------- */
+let resetArmed = false;
+let resetTimer = null;
+
+function updateSoundBtn() {
+  $('#btn-sound-toggle').textContent = Sound.enabled ? '🔊 Sound: On' : '🔇 Sound: Off';
+}
+
+function disarmReset() {
+  resetArmed = false;
+  clearTimeout(resetTimer);
+  const b = $('#btn-reset');
+  b.classList.remove('confirm');
+  b.textContent = '🗑️ Reset Progress';
+}
+
+function closeSettings() {
+  disarmReset();
+  $('#settings-modal').classList.add('hidden');
+}
+
 /* ---------- init ---------- */
 function init() {
   Confetti.init();
@@ -543,14 +564,43 @@ function init() {
     nextQuestion();
     showScreen('screen-game');
   });
-  $('#btn-sound').addEventListener('click', () => {
+  $('#btn-settings').addEventListener('click', () => {
+    Sound.init(); Sound.pop();
+    updateSoundBtn();
+    $('#settings-modal').classList.remove('hidden');
+  });
+  $('#btn-settings-close').addEventListener('click', () => { Sound.pop(); closeSettings(); });
+  $('#settings-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'settings-modal') closeSettings();
+  });
+  $('#btn-sound-toggle').addEventListener('click', () => {
     Sound.enabled = !Sound.enabled;
     localStorage.setItem('nl_sound', Sound.enabled ? 'on' : 'off');
-    $('#btn-sound').textContent = Sound.enabled ? '🔊' : '🔇';
     if (!Sound.enabled) Speech.stop();
     else { Sound.init(); Sound.pop(); }
+    updateSoundBtn();
   });
-  $('#btn-sound').textContent = Sound.enabled ? '🔊' : '🔇';
+  $('#btn-reset').addEventListener('click', () => {
+    const b = $('#btn-reset');
+    if (!resetArmed) {
+      resetArmed = true;
+      b.classList.add('confirm');
+      b.textContent = '⚠️ Are you sure? Tap again!';
+      Sound.pop();
+      resetTimer = setTimeout(disarmReset, 3000);
+      return;
+    }
+    disarmReset();
+    State.stars = 0;
+    State.trophies = 0;
+    State.save();
+    updateStarUI();
+    renderHome();
+    b.textContent = '✅ Progress reset!';
+    Sound.correct();
+    setTimeout(() => { b.textContent = '🗑️ Reset Progress'; }, 1500);
+  });
+  updateSoundBtn();
 }
 
 document.addEventListener('DOMContentLoaded', init);

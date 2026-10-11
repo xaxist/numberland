@@ -31,7 +31,7 @@
   <div class="logo">🔢 Numberland</div>
   <div class="top-right">
     <div id="star-counter" class="star-counter" title="Your stars">⭐ <span id="star-count">0</span></div>
-    <button id="btn-sound" class="icon-btn" aria-label="Toggle sound">🔊</button>
+    <button id="btn-settings" class="icon-btn" aria-label="Settings">⚙️</button>
   </div>
 </header>
 
@@ -77,6 +77,16 @@
   </section>
 
 </main>
+
+<!-- SETTINGS MODAL -->
+<div id="settings-modal" class="modal hidden">
+  <div class="modal-box" role="dialog" aria-label="Settings">
+    <h2>Settings ⚙️</h2>
+    <button id="btn-sound-toggle" class="settings-btn">🔊 Sound: On</button>
+    <button id="btn-reset" class="settings-btn danger">🗑️ Reset Progress</button>
+    <button id="btn-settings-close" class="settings-btn close">✖ Close</button>
+  </div>
+</div>
 
 <script src="game.js"></script>
 </body>
