@@ -5,9 +5,10 @@ project is, how it is structured, and the conventions to follow when changing it
 
 ## What this is
 
-**Numberland** is a static web game that teaches maths to children aged **3–8**. It is a
-single-page app with zero dependencies and no build step: plain HTML, CSS, and JavaScript.
-It is deployed as-is to **GitHub Pages** from the repository root.
+**Numberland** is a static web game that teaches maths to children aged **3–10** with
+**19 games** on one screen. It is a single-page app with zero dependencies and no build
+step: plain HTML, CSS, and JavaScript. It is deployed as-is to **GitHub Pages** from the
+repository root.
 
 - Live site: `https://xaxist.github.io/numberland/`
 - Repo: `https://github.com/xaxist/numberland`
@@ -25,8 +26,13 @@ It is deployed as-is to **GitHub Pages** from the repository root.
 4. Kid-safe UX rules established so far:
    - Confetti showers only on **level completion** (3-correct streak) and **trophy milestones**
      (every 10 stars) — never on ordinary correct answers.
-   - The home screen is a **single flat grid** of game cards (no age/section grouping).
+   - The home screen is a **single flat grid** of game cards (no age/section grouping),
+     ordered easiest → hardest.
    - Speech and pending question timers must be cancelled when leaving the game screen.
+   - A wrong tap never punishes, but a child must never be stuck: on the **second** wrong tap
+     of a question the correct option gets a green glow (`reveal`) and is described aloud.
+   - Question wording must be grammatical with the content tables (use `OBJECTS[].s` for
+     singular, `.w` for plural).
 
 ## Repository layout
 
@@ -51,8 +57,8 @@ It is deployed as-is to **GitHub Pages** from the repository root.
 
 Everything is plain script (no modules) with these subsystems, top to bottom:
 
-- **Helpers** — `rand`, `pick`, `shuffle`, `$`; content tables `OBJECTS` (emoji + plural word)
-  and `SHAPES`; `PRAISES`/`ENCOURAGE` phrase lists.
+- **Helpers** — `rand`, `pick`, `shuffle`, `$`; content tables `OBJECTS` (`{ e: emoji,
+  w: plural word, s: singular word }`) and `SHAPES`; `PRAISES`/`ENCOURAGE` phrase lists.
 - **`Sound`** — synthesized effects via Web Audio (`tone()` primitive + `pop`, `count`,
   `correct`, `wrong`, `fanfare`). No audio files. `Sound.enabled` persisted in
   `localStorage['nl_sound']`. AudioContext is created/resumed on first pointer interaction
@@ -60,11 +66,14 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
 - **`Speech`** — wraps `speechSynthesis`; `say(text)` cancels any current utterance first,
   picks an English voice, rate 0.95 / pitch 1.15. Gated by `Sound.enabled`.
 - **`Confetti`** — full-screen canvas particle shower; `launch(n)`.
-- **`State`** — `{ stars, trophies, mode, level, streak, answered, question, timer }`.
+- **`State`** — `{ stars, trophies, mode, level, streak, misses, answered, question, timer }`.
   Stars/trophies persist in `localStorage['nl_stars']` / `['nl_trophies']` via `State.save()`.
-- **Option builders** — `numberOptions` (near-miss distractors), `multiplyOptions`
-  (adjacent-multiple distractors), `pvOptions` (digit-swap distractors), `clockOptions`,
-  plus `fmtTime` and `clockSVG(hour, minute)` which renders the analog clock as inline SVG.
+  `misses` counts wrong taps on the current question and drives the reveal hint.
+- **Option builders** — `numberOptions` (near-miss distractors), `optionSet` (deduped candidate
+  list, works for numbers and strings), `nearOptions`, `multiplyOptions` (adjacent-multiple
+  distractors), `pvOptions` (digit-swap distractors), `fracOptions` (fraction distractors),
+  `clockOptions` (`jitter` widens minute distractors at level 4), plus `fmtTime`,
+  `clockSVG(hour, minute)` and `pieSVG(parts, shaded)` which render inline SVG.
 - **`Generators`** — one function per game mode, keyed by mode id. Each returns a
   **question object** (contract below).
 - **`MODES`** — registry array of `{ id, name, desc, icon, color }`; order = home grid order.
@@ -88,8 +97,36 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
 | `q.groups`    | `{ count, size, emoji }` — count boxes of size emoji (multiplication groups) |
 | `q.pairs`     | `{ n, emoji }` — n emoji in boxes of 2, odd leftover highlighted (odd/even) |
 | `q.clock`     | `{ hour, minute }` — renders analog SVG clock |
+| `q.pie`       | `{ parts, shaded }` — SVG pie for fractions; `q.answer` is the string `'shaded/parts'` |
+| `q.coins`     | Array of coin values — rendered as gold coins, biggest first (treasure/money) |
+| `q.measure`   | `{ cells, items: [{ emoji, len }] }` — cube ruler grid; a numbered cube row is drawn under each item |
+| `q.chart`     | Array of `{ e, w, n }` — picture graph columns, height `n`, count label under each |
 | `q.compare`   | `{ left, right, emoji }` — two panels, `q.answer` is `'left'`/`'right'` |
 | `q.shapeOptions` | Array of `{ e, w }` shape objects |
+
+### The 19 games (home grid order: easiest → hardest)
+
+| id | Concept | Ages | Level 4 ceiling |
+|----|---------|------|-----------------|
+| `count` | Counting objects | 3–5 | up to 20 objects |
+| `find` | Recognise a spoken number | 3–6 | numbers to 999 |
+| `add` | Addition with tappable groups | 4–9 | 3-digit + 3-digit |
+| `sub` | Subtraction with crossing-out | 4–9 | 3-digit − 3-digit |
+| `compare` | More / fewer | 4–6 | up to 20 per side |
+| `shapes` | Shape names | 4–6 | 6 shapes on screen |
+| `measure` | Non-standard measurement | 5–8 | compare two lengths, to 20 cubes |
+| `data` | Picture graphs: most/fewest/how many/how many more | 5–9 | 4 categories, up to 10 |
+| `missing` | Missing number / fact families | 5–9 | 3-digit equations |
+| `multiply` | Times tables, grouped objects | 6–10 | 11–19 × 3–9, tables to 12 |
+| `divide` | Sharing into equal groups | 7–9 | tables to 9, grouping shown |
+| `money` | Adding coin values | 6–9 | values to 50, 6 coins |
+| `patterns` | Number sequences (+ rules, doubling) | 6–10 | step up to 10 and doubling from 5 |
+| `oddeven` | Odd/even by pairing | 6–9 | numbers to 999 |
+| `placevalue` | Tens, hundreds, digit values | 7–10 | thousands + "value of the digit" |
+| `fraction` | Unit fractions from a shaded pie | 7–10 | twelfths |
+| `clock` | Reading an analog clock | 6–10 | minutes in 5s |
+| `round` | Rounding | 8–10 | nearest 1000 |
+| `mixed` | Order of operations (brackets first) | 8–10 | `a × b + c × d`, `(a − b) × c`, `a − b ÷ c` |
 
 ### Progression
 
@@ -99,7 +136,11 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
 - **3-streak → level up** (max level 4): confetti, fanfare, spoken "Level up!".
 - **Every 10 stars → trophy screen**: big confetti, fanfare, trophy count bumps in the top bar.
 - Wrong answer: option dims and disables, spoken encouragement, streak resets. No penalty.
-- Generators receive `level` (1–4) and must scale difficulty (see existing modes for ranges).
+- Second wrong tap on the same question: `revealAnswer(q)` glows the correct option (or panel)
+  and speech says "Look for the green glow, then tap it!". `State.misses` resets each question.
+- Answering correctly after having missed: spoken "Yes! You worked that out, well done!"
+  instead of a generic praise, and no star is deducted.
+- Generators receive `level` (1–4) and must scale difficulty (see the game table above).
 
 ### Settings modal
 

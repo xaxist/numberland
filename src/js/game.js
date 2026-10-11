@@ -15,11 +15,11 @@ const shuffle = (arr) => {
 };
 
 const OBJECTS = [
-  { e: '🍎', w: 'apples' }, { e: '🐥', w: 'chicks' }, { e: '🎈', w: 'balloons' },
-  { e: '🐶', w: 'puppies' }, { e: '🍓', w: 'strawberries' }, { e: '🦋', w: 'butterflies' },
-  { e: '⚽', w: 'balls' }, { e: '🐠', w: 'fish' }, { e: '🌸', w: 'flowers' },
-  { e: '🚗', w: 'cars' }, { e: '🧸', w: 'teddy bears' }, { e: '🍪', w: 'cookies' },
-  { e: '🐸', w: 'frogs' }, { e: '🍇', w: 'grapes' }, { e: '🐱', w: 'kittens' },
+  { e: '🍎', w: 'apples', s: 'apple' }, { e: '🐥', w: 'chicks', s: 'chick' }, { e: '🎈', w: 'balloons', s: 'balloon' },
+  { e: '🐶', w: 'puppies', s: 'puppy' }, { e: '🍓', w: 'strawberries', s: 'strawberry' }, { e: '🦋', w: 'butterflies', s: 'butterfly' },
+  { e: '⚽', w: 'balls', s: 'ball' }, { e: '🐠', w: 'fish', s: 'fish' }, { e: '🌸', w: 'flowers', s: 'flower' },
+  { e: '🚗', w: 'cars', s: 'car' }, { e: '🧸', w: 'teddy bears', s: 'teddy bear' }, { e: '🍪', w: 'cookies', s: 'cookie' },
+  { e: '🐸', w: 'frogs', s: 'frog' }, { e: '🍇', w: 'grapes', s: 'grape' }, { e: '🐱', w: 'kittens', s: 'kitten' },
 ];
 
 const SHAPES = [
@@ -162,6 +162,7 @@ const State = {
   mode: null,
   level: 1,
   streak: 0,
+  misses: 0,
   answered: false,
   question: null,
   timer: null,
@@ -181,6 +182,27 @@ function numberOptions(correct, count, min, max) {
   }
   while (set.size < count) set.add(rand(min, max));
   return shuffle([...set]);
+}
+
+/* Build an option list from candidate values, keeping the answer and dropping
+   out-of-range or duplicate candidates. */
+function optionSet(correct, cands, count, min = 1) {
+  const set = new Set([correct]);
+  for (const c of shuffle(cands)) {
+    if (set.size >= count) break;
+    if (c !== correct && (typeof c === 'string' || (Number.isInteger(c) && c >= min))) set.add(c);
+  }
+  let e = 1;
+  while (set.size < count && typeof correct === 'number') {
+    if (correct + e >= min) set.add(correct + e);
+    e++;
+  }
+  return shuffle([...set].slice(0, Math.max(count, set.size)));
+}
+
+/* Distractors close to the answer, useful once numbers get big. */
+function nearOptions(correct, count, deltas, min = 1) {
+  return optionSet(correct, deltas.map(d => correct + d), count, min);
 }
 
 function multiplyOptions(product, table) {
@@ -206,20 +228,57 @@ function pvOptions(n) {
   return shuffle([...set]);
 }
 
-function fmtTime(hour, minute) {
-  return `${hour}:${String(minute).padStart(2, '0')}`;
+/* "1 ten" / "3 tens" — place value wording */
+function placeLabel(v, unit) {
+  return `${v} ${v === 1 ? unit : unit + 's'}`;
 }
 
-function clockOptions(hour, minute, count) {
+function fmtTime(hour, minute) {  return `${hour}:${String(minute).padStart(2, '0')}`;
+}
+
+function clockOptions(hour, minute, count, jitter = false) {
   const set = new Set([fmtTime(hour, minute)]);
   let guard = 0;
   while (set.size < count && guard++ < 60) {
     let h = hour + pick([-2, -1, 1, 2]);
     if (h < 1) h += 12;
     if (h > 12) h -= 12;
-    set.add(fmtTime(h, minute));
+    let m = minute;
+    if (jitter) {
+      m = minute + pick([-20, -15, -10, -5, 5, 10, 15, 20]);
+      if (m < 0) m += 60;
+      if (m > 59) m -= 60;
+    }
+    set.add(fmtTime(h, m));
   }
   return shuffle([...set]);
+}
+
+function fracOptions(den, num, count) {
+  const correct = `${num}/${den}`;
+  const cands = [];
+  if (num + 1 <= den) cands.push(`${num + 1}/${den}`);
+  if (num - 1 >= 1) cands.push(`${num - 1}/${den}`);
+  if (den - num >= 1 && den - num !== num) cands.push(`${den - num}/${den}`);
+  cands.push(`${num}/${den + 2}`, `${num}/${den * 2}`);
+  for (const f of ['1/2', '1/3', '1/4', '2/3', '3/4', '1/6', '5/6', '3/8']) {
+    if (f !== correct && !cands.includes(f)) cands.push(f);
+  }
+  return optionSet(correct, [...new Set(cands)], count, 0);
+}
+
+function pieSVG(parts, shaded) {
+  const c = 84, r = 72;
+  let svg = `<svg viewBox="0 0 168 168" width="168" height="168" role="img" aria-label="Fraction picture">`;
+  svg += `<circle cx="${c}" cy="${c}" r="${r + 5}" fill="#ffffff"/>`;
+  for (let i = 0; i < parts; i++) {
+    const a0 = (i * 360 / parts - 90) * Math.PI / 180;
+    const a1 = ((i + 1) * 360 / parts - 90) * Math.PI / 180;
+    const x0 = c + r * Math.cos(a0), y0 = c + r * Math.sin(a0);
+    const x1 = c + r * Math.cos(a1), y1 = c + r * Math.sin(a1);
+    svg += `<path d="M ${c} ${c} L ${x0.toFixed(1)} ${y0.toFixed(1)} A ${r} ${r} 0 0 1 ${x1.toFixed(1)} ${y1.toFixed(1)} Z" fill="${i < shaded ? '#ff6b6b' : '#e9ecef'}" stroke="#343a40" stroke-width="3"/>`;
+  }
+  return `${svg}</svg>`;
 }
 
 function clockSVG(hour, minute) {
@@ -263,7 +322,7 @@ const Generators = {
   },
 
   find(level) {
-    const max = level === 1 ? 5 : level === 2 ? 10 : level === 3 ? 20 : 99;
+    const max = level === 1 ? 5 : level === 2 ? 10 : level === 3 ? 100 : 999;
     const target = rand(1, max);
     return {
       type: 'options',
@@ -276,6 +335,19 @@ const Generators = {
   },
 
   add(level) {
+    if (level >= 4) {
+      const a = rand(120, 699);
+      const b = rand(110, 999 - a);
+      const sum = a + b;
+      return {
+        type: 'options',
+        text: `${a} + ${b} = ?`,
+        speak: `What is ${a} plus ${b}? Line up the tens and ones!`,
+        visualText: `${a} + ${b} = ❓`,
+        options: nearOptions(sum, 4, [-100, -10, -1, 1, 10, 100], 1),
+        answer: sum,
+      };
+    }
     const maxSum = level === 1 ? 5 : level === 2 ? 10 : 20;
     const a = rand(1, maxSum - 1);
     const b = rand(1, maxSum - a);
@@ -292,6 +364,19 @@ const Generators = {
   },
 
   sub(level) {
+    if (level >= 4) {
+      const a = rand(300, 999);
+      const b = rand(110, a - 100);
+      const result = a - b;
+      return {
+        type: 'options',
+        text: `${a} − ${b} = ?`,
+        speak: `What is ${a} minus ${b}? Watch out for exchanging!`,
+        visualText: `${a} − ${b} = ❓`,
+        options: nearOptions(result, 4, [-100, -10, -1, 1, 10, 100], 1),
+        answer: result,
+      };
+    }
     const max = level === 1 ? 5 : level === 2 ? 10 : 20;
     const a = rand(2, max);
     const b = rand(1, level === 1 ? a - 1 : a);
@@ -341,6 +426,33 @@ const Generators = {
   },
 
   missing(level) {
+    if (level >= 4) {
+      const useSub = Math.random() < 0.5;
+      if (useSub) {
+        const a = rand(400, 999);
+        const r = rand(110, a - 100);
+        const b = a - r;
+        return {
+          type: 'options',
+          text: `${a} − ? = ${r}`,
+          speak: `What is the missing number? ${a} minus what equals ${r}?`,
+          visualText: `${a} − ❓ = ${r}`,
+          options: nearOptions(b, 4, [-100, -10, -1, 1, 10, 100], 1),
+          answer: b,
+        };
+      }
+      const sum = rand(500, 999);
+      const a = rand(110, sum - 110);
+      const b = sum - a;
+      return {
+        type: 'options',
+        text: `${a} + ? = ${sum}`,
+        speak: `What is the missing number? ${a} plus what equals ${sum}?`,
+        visualText: `${a} + ❓ = ${sum}`,
+        options: nearOptions(b, 4, [-100, -10, -1, 1, 10, 100], 1),
+        answer: b,
+      };
+    }
     const max = level === 1 ? 10 : level === 2 ? 15 : 20;
     const useSub = level >= 2 && Math.random() < 0.5;
     if (useSub) {
@@ -370,7 +482,21 @@ const Generators = {
   },
 
   multiply(level) {
-    const tables = level === 1 ? [2, 5, 10] : level === 2 ? [2, 3, 4, 5, 10] : [2, 3, 4, 5, 6];
+    if (level >= 4) {
+      const big = Math.random() < 0.4;
+      const a = big ? rand(11, 19) : pick([6, 7, 8, 9, 12]);
+      const b = big ? rand(3, 9) : rand(2, 12);
+      const product = a * b;
+      return {
+        type: 'options',
+        text: `${a} × ${b} = ?`,
+        speak: `What is ${a} times ${b}?`,
+        visualText: `${a} × ${b} = ❓`,
+        options: multiplyOptions(product, a),
+        answer: product,
+      };
+    }
+    const tables = level === 1 ? [2, 5, 10] : level === 2 ? [2, 3, 4, 5, 10] : [2, 3, 4, 5, 6, 7, 8, 9];
     const a = pick(tables);
     const b = rand(1, level === 1 ? 5 : level === 2 ? 6 : 9);
     const product = a * b;
@@ -388,25 +514,33 @@ const Generators = {
 
   patterns(level) {
     const steps = level === 1 ? [1, 2] : level === 2 ? [2, 5, 10] : [2, 3, 4, 5, 10];
-    const step = pick(steps);
-    const down = level >= 3 && Math.random() < 0.4;
     const shown = level === 1 ? 3 : 4;
-    const start = down ? rand(step * shown + 1, step * shown + 10) : rand(1, 10);
-    const seq = [];
-    for (let i = 0; i < shown; i++) seq.push(start + (down ? -step : step) * i);
-    const answer = start + (down ? -step : step) * shown;
+    const doubling = level >= 3 && Math.random() < 0.3;
+    let seq, answer;
+    if (doubling) {
+      const s0 = pick([2, 3, 5]);
+      seq = [s0, s0 * 2, s0 * 4, s0 * 8];
+      answer = s0 * 16;
+    } else {
+      const step = pick(steps);
+      const down = level >= 3 && Math.random() < 0.4;
+      const start = down ? rand(step * shown + 1, step * shown + 10) : rand(1, 10);
+      seq = [];
+      for (let i = 0; i < shown; i++) seq.push(start + (down ? -step : step) * i);
+      answer = start + (down ? -step : step) * shown;
+    }
     return {
       type: 'options',
       text: 'What comes next?',
       speak: `What comes next? ${seq.join(', ')}, what?`,
       visualText: seq.join(' → ') + ' → ❓',
-      options: numberOptions(answer, 3, 0, answer + step * 2 + 2),
+      options: optionSet(answer, [answer - 1, answer + 1, answer - 10, answer + 10, seq[seq.length - 1] * 2, answer * 2], level === 1 ? 3 : 4, 0),
       answer,
     };
   },
 
   oddeven(level) {
-    const max = level === 1 ? 10 : level === 2 ? 30 : 99;
+    const max = level === 1 ? 10 : level === 2 ? 30 : level === 3 ? 99 : 999;
     const n = rand(1, max);
     const q = {
       type: 'options',
@@ -421,14 +555,42 @@ const Generators = {
   },
 
   placevalue(level) {
+    if (level >= 4) {
+      const digits = { th: rand(1, 9), h: rand(0, 9), t: rand(0, 9), o: rand(1, 9) };
+      const values = { th: digits.th * 1000, h: digits.h * 100, t: digits.t * 10, o: digits.o };
+      const n = values.th + values.h + values.t + values.o;
+      if (Math.random() < 0.5) {
+        const th = rand(1, 6), h = rand(0, 9), t = rand(0, 9), o = rand(1, 9);
+        const made = th * 1000 + h * 100 + t * 10 + o;
+        return {
+          type: 'options',
+          text: `${placeLabel(th, 'thousand')} + ${placeLabel(h, 'hundred')} + ${placeLabel(t, 'ten')} + ${placeLabel(o, 'one')} = ?`,
+          speak: `What is ${placeLabel(th, 'thousand')}, ${placeLabel(h, 'hundred')}, ${placeLabel(t, 'ten')} and ${placeLabel(o, 'one')}?`,
+          visualText: `${th * 1000} + ${h * 100} + ${t * 10} + ${o} = ❓`,
+          options: nearOptions(made, 4, [-1000, -100, -10, 10, 100, 1000, -1, 1], 1),
+          answer: made,
+        };
+      }
+      const place = pick(['th', 'h', 't', 'o'].filter(p => digits[p] > 0));
+      const answer = values[place];
+      const d = digits[place];
+      return {
+        type: 'options',
+        text: `What is the value of the ${d} in ${n}?`,
+        speak: `What is the value of the digit ${d} in the number ${n}?`,
+        visualText: String(n),
+        options: optionSet(answer, [d, d * 10, d * 100, d * 1000, answer * 10, answer / 10], 4, 1),
+        answer,
+      };
+    }
     const type = level >= 3 ? pick(['make3', 'tens']) : pick(['make2', 'make2', 'tens']);
     if (type === 'make3') {
       const h = rand(1, 5), t = rand(0, 9), o = rand(0, 9);
       const n = h * 100 + t * 10 + o;
       return {
         type: 'options',
-        text: `${h} hundreds + ${t} tens + ${o} ones = ?`,
-        speak: `What is ${h} hundreds, ${t} tens, and ${o} ones?`,
+        text: `${placeLabel(h, 'hundred')} + ${placeLabel(t, 'ten')} + ${placeLabel(o, 'one')} = ?`,
+        speak: `What is ${placeLabel(h, 'hundred')}, ${placeLabel(t, 'ten')} and ${placeLabel(o, 'one')}?`,
         visualText: `${h * 100} + ${t * 10} + ${o} = ❓`,
         options: pvOptions(n),
         answer: n,
@@ -451,8 +613,8 @@ const Generators = {
     const n = t * 10 + o;
     return {
       type: 'options',
-      text: `${t} tens + ${o} ones = ?`,
-      speak: `What is ${t} tens and ${o} ones?`,
+      text: `${placeLabel(t, 'ten')} + ${placeLabel(o, 'one')} = ?`,
+      speak: `What is ${placeLabel(t, 'ten')} and ${placeLabel(o, 'one')}?`,
       visualText: `${t * 10} + ${o} = ❓`,
       options: pvOptions(n),
       answer: n,
@@ -460,32 +622,244 @@ const Generators = {
   },
 
   clock(level) {
-    const minute = level === 1 ? 0 : level === 2 ? pick([0, 30]) : pick([0, 15, 30, 45]);
+    const minute = level === 1 ? 0 : level === 2 ? pick([0, 30]) : level === 3 ? pick([0, 15, 30, 45]) : pick([0, 5, 10, 20, 25, 35, 40, 50, 55]);
     const hour = rand(1, 12);
     return {
       type: 'options',
       text: 'What time is it? 🕐',
       speak: 'What time is it? Look at the clock!',
       clock: { hour, minute },
-      options: clockOptions(hour, minute, level === 1 ? 3 : 4),
+      options: clockOptions(hour, minute, level === 1 ? 3 : 4, level >= 4),
       answer: fmtTime(hour, minute),
+    };
+  },
+
+  /* ---- new concepts for older kids ---- */
+
+  divide(level) {
+    const groups = level === 1 ? rand(2, 3) : level === 2 ? rand(2, 5) : rand(3, 9);
+    const size = level === 1 ? rand(1, 4) : level === 2 ? rand(2, 5) : rand(2, 9);
+    const total = groups * size;
+    const obj = pick(OBJECTS);
+    const q = {
+      type: 'options',
+      text: `Share ${total} ${obj.w} between ${groups} friends. How many each?`,
+      speak: `Share ${total} ${obj.w} equally between ${groups} friends. How many does each friend get?`,
+      visualText: `${total} ÷ ${groups} = ❓`,
+      options: optionSet(size, [size - 1, size + 1, size - 2, size + 2, groups, total - size], level === 1 ? 3 : 4, 1),
+      answer: size,
+    };
+    if (total <= 24) q.groups = { count: groups, size, emoji: obj.e };
+    return q;
+  },
+
+  fraction(level) {
+    const den = level === 1 ? 2 : level === 2 ? pick([2, 4]) : level === 3 ? pick([3, 4, 6]) : pick([5, 6, 8, 10, 12]);
+    const num = rand(1, den - 1);
+    const obj = pick(OBJECTS);
+    return {
+      type: 'options',
+      text: `What fraction of the ${obj.s} is shaded?`,
+      speak: `What fraction of this ${obj.s} is shaded? Count all the parts, then count the shaded ones!`,
+      pie: { parts: den, shaded: num },
+      options: fracOptions(den, num, level === 1 ? 3 : 4),
+      answer: `${num}/${den}`,
+    };
+  },
+
+  money(level) {
+    const coins = level === 1 ? [1, 2] : level === 2 ? [1, 2, 5, 10] : level === 3 ? [1, 5, 10, 20] : [1, 2, 5, 10, 20, 50];
+    const count = level === 1 ? rand(2, 4) : level === 2 ? rand(3, 5) : rand(3, 6);
+    const held = [];
+    for (let i = 0; i < count; i++) held.push(pick(coins));
+    const total = held.reduce((s, c) => s + c, 0);
+    const deltas = [];
+    for (const c of held) { deltas.push(-c, c); }
+    return {
+      type: 'options',
+      text: 'How much treasure is in the pot?',
+      speak: 'Count the gold coins! Add up the biggest ones first. How much treasure altogether?',
+      coins: held,
+      options: optionSet(total, deltas.concat([-2, -1, 1, 2, 5, 10]).map(d => total + d), 4, 1),
+      answer: total,
+    };
+  },
+
+  measure(level) {
+    const cells = level === 1 ? 6 : level === 2 ? 10 : level === 3 ? 15 : 20;
+    const asking = level >= 3 ? pick(['len', 'diff']) : 'len';
+    const objA = pick(OBJECTS);
+    let objB = pick(OBJECTS);
+    while (objB.e === objA.e) objB = pick(OBJECTS);
+    const lenA = rand(2, cells);
+    if (asking === 'diff') {
+      let lenB = rand(1, cells);
+      while (lenB === lenA) lenB = rand(1, cells);
+      const long = Math.max(lenA, lenB);
+      const short = Math.min(lenA, lenB);
+      const diff = long - short;
+      return {
+        type: 'options',
+        text: `How much longer is the ${objA.s} than the ${objB.s}?`,
+        speak: `Measure both. How much longer is the ${objA.s} than the ${objB.s}?`,
+        measure: { cells, items: [{ emoji: objA.e, len: long }, { emoji: objB.e, len: short }] },
+        options: optionSet(diff, [diff - 1, diff + 1, diff - 2, diff + 2, long, short].filter(v => v > 0), 4, 1),
+        answer: diff,
+      };
+    }
+    return {
+      type: 'options',
+      text: `How many cubes long is the ${objA.s}?`,
+      speak: `How many cubes long is the ${objA.s}? Count the cubes!`,
+      measure: { cells, items: [{ emoji: objA.e, len: lenA }] },
+      options: optionSet(lenA, [lenA - 1, lenA + 1, lenA - 2, lenA + 2, cells, cells - lenA].filter(v => v > 0), level === 1 ? 3 : 4, 1),
+      answer: lenA,
+    };
+  },
+
+  round(level) {
+    const nearest = level <= 2 ? 10 : level === 3 ? pick([10, 100]) : pick([100, 1000]);
+    let n;
+    if (nearest === 10) n = rand(11, 99);
+    else if (nearest === 100) n = rand(110, 989);
+    else n = rand(1100, 9890);
+    if (n % nearest === 0) n += rand(1, nearest - 1);
+    const lower = Math.floor(n / nearest) * nearest;
+    const upper = lower + nearest;
+    const answer = n - lower >= nearest - (n - lower) ? upper : lower;
+    return {
+      type: 'options',
+      text: `Round ${n} to the nearest ${nearest}.`,
+      speak: `Round ${n} to the nearest ${nearest}! Which is it closer to?`,
+      visualText: `${n} → ❓`,
+      options: optionSet(answer, [lower, upper, answer + nearest, answer - nearest, n].filter(v => v > 0), 4, 1),
+      answer,
+    };
+  },
+
+  data(level) {
+    const kinds = shuffle(OBJECTS).slice(0, level === 1 ? 3 : 4);
+    const max = level === 1 ? 5 : level === 2 ? 8 : 10;
+    const used = [];
+    for (const k of kinds) {
+      let n = rand(1, max);
+      while (used.includes(n)) n = rand(1, max);
+      used.push(n);
+      k.n = n;
+    }
+    const asked = shuffle(kinds);
+    const question = level === 1 ? pick(['most', 'fewest']) : pick(['most', 'fewest', 'count', 'diff']);
+    if (question === 'count') {
+      const target = asked[0];
+      return {
+        type: 'options',
+        text: `How many ${target.w} were counted?`,
+        speak: `Look at the graph. How many ${target.w} were counted?`,
+        chart: asked,
+        options: optionSet(target.n, [target.n - 1, target.n + 1, target.n - 2, target.n + 2].filter(v => v > 0), 4, 1),
+        answer: target.n,
+      };
+    }
+    if (question === 'diff') {
+      const [a, b] = asked[0].n > asked[1].n ? [asked[0], asked[1]] : [asked[1], asked[0]];
+      const diff = a.n - b.n;
+      return {
+        type: 'options',
+        text: `How many more ${a.w} than ${b.w}?`,
+        speak: `How many more ${a.w} are there than ${b.w}?`,
+        chart: asked,
+        options: optionSet(diff, [diff - 1, diff + 1, diff - 2, diff + 2, a.n].filter(v => v > 0), 4, 1),
+        answer: diff,
+      };
+    }
+    const sorted = asked.slice().sort((x, y) => (question === 'most' ? y.n - x.n : x.n - y.n));
+    const winner = sorted[0];
+    return {
+      type: 'options',
+      text: question === 'most' ? 'Which group has the MOST?' : 'Which group has the FEWEST?',
+      speak: question === 'most'
+        ? 'Look at the graph! Which group has the most?'
+        : 'Look at the graph! Which group has the fewest?',
+      chart: asked,
+      options: shuffle(asked.map(k => k.e)),
+      answer: winner.e,
+    };
+  },
+
+  mixed(level) {
+    const kinds = level === 1 ? ['addMul', 'mulAdd']
+      : level === 2 ? ['addMul', 'mulAdd', 'subDiv', 'bracket']
+      : level === 3 ? ['subDiv', 'bracket', 'twoMul', 'minus']
+      : ['twoMul', 'minus', 'bracket', 'subDiv'];
+    const big = level >= 4;
+    const kind = pick(kinds);
+    let a, b, c, d, text, speak, visualText, answer, trap;
+    if (kind === 'addMul') {
+      b = rand(2, big ? 9 : 5); c = rand(2, big ? 9 : 6); a = rand(1, 9);
+      answer = a + b * c; trap = (a + b) * c;
+      text = `${a} + ${b} × ${c} = ?`;
+      speak = `What is ${a} plus ${b} times ${c}? Do the multiplication first!`;
+    } else if (kind === 'subDiv') {
+      c = rand(2, 6);
+      const q = rand(2, big ? 9 : 6);
+      const k = rand(1, 4);
+      b = c * q;
+      a = c * (q + k);
+      answer = a - q; trap = k;
+      text = `${a} − ${b} ÷ ${c} = ?`;
+      speak = `What is ${a} minus ${b} divided by ${c}? Do the division first!`;
+    } else if (kind === 'mulAdd') {
+      a = rand(2, big ? 9 : 6); b = rand(2, big ? 9 : 6); c = rand(1, 9);
+      answer = a * b + c; trap = a * (b + c);
+      text = `${a} × ${b} + ${c} = ?`;
+      speak = `What is ${a} times ${b}, plus ${c}?`;
+    } else if (kind === 'bracket') {
+      a = rand(2, 9); b = rand(2, 9); c = rand(2, big ? 9 : 5);
+      answer = (a + b) * c; trap = a + b * c;
+      text = `(${a} + ${b}) × ${c} = ?`;
+      speak = `What is the sum of ${a} and ${b}, all multiplied by ${c}?`;
+    } else if (kind === 'twoMul') {
+      a = rand(2, 6); b = rand(2, 6); c = rand(2, 5); d = rand(2, 5);
+      answer = a * b + c * d; trap = (a + c) * (b + d);
+      text = `${a} × ${b} + ${c} × ${d} = ?`;
+      speak = `What is ${a} times ${b}, plus ${c} times ${d}? Do both multiplications first!`;
+    } else {
+      a = rand(6, big ? 20 : 12); b = rand(2, a - 2); c = rand(2, big ? 9 : 5);
+      answer = (a - b) * c; trap = a - b * c;
+      text = `(${a} − ${b}) × ${c} = ?`;
+      speak = `What is ${a} minus ${b}, all multiplied by ${c}?`;
+    }
+    return {
+      type: 'options',
+      text,
+      speak,
+      visualText: text.replace('= ?', '= ❓'),
+      options: optionSet(answer, [trap, answer - 1, answer + 1, answer - 2, answer + 2, answer + 10].filter(v => v > 0), 4, 1),
+      answer,
     };
   },
 };
 
 const MODES = [
-  { id: 'count',      name: 'Counting',     desc: 'Count the objects',    icon: '🍎', color: '#ff6b6b' },
-  { id: 'find',       name: 'Find Number',  desc: 'Spot the number',      icon: '🔢', color: '#4dabf7' },
-  { id: 'add',        name: 'Adding',       desc: 'Put groups together',  icon: '➕', color: '#51cf66' },
-  { id: 'sub',        name: 'Take Away',    desc: 'How many are left?',   icon: '➖', color: '#ffa94d' },
-  { id: 'compare',    name: 'More or Less', desc: 'Which side wins?',     icon: '⚖️', color: '#9775fa' },
-  { id: 'shapes',     name: 'Shapes',       desc: 'Name that shape',      icon: '🔷', color: '#f783ac' },
-  { id: 'missing',    name: 'Missing No.',  desc: 'Solve the gap',        icon: '❓', color: '#20c997' },
-  { id: 'multiply',   name: 'Multiply',     desc: 'Times tables fun',     icon: '✖️', color: '#f03e3e' },
-  { id: 'patterns',   name: 'Patterns',     desc: 'What comes next?',     icon: '🧩', color: '#4263eb' },
-  { id: 'oddeven',    name: 'Odd or Even',  desc: 'Pair them up',         icon: '👯', color: '#d6336c' },
-  { id: 'placevalue', name: 'Place Value',  desc: 'Tens and ones',        icon: '🧮', color: '#0ca678' },
-  { id: 'clock',      name: 'Clock Time',   desc: 'Read the clock',       icon: '🕐', color: '#f76707' },
+  { id: 'count',      name: 'Counting',     desc: 'Count the objects',      icon: '🍎', color: '#ff6b6b' },
+  { id: 'find',       name: 'Find Number',  desc: 'Spot the number',        icon: '🔢', color: '#4dabf7' },
+  { id: 'add',        name: 'Adding',       desc: 'Put groups together',    icon: '➕', color: '#51cf66' },
+  { id: 'sub',        name: 'Take Away',    desc: 'How many are left?',     icon: '➖', color: '#ffa94d' },
+  { id: 'compare',    name: 'More or Less', desc: 'Which side wins?',       icon: '⚖️', color: '#9775fa' },
+  { id: 'shapes',     name: 'Shapes',       desc: 'Name that shape',        icon: '🔷', color: '#f783ac' },
+  { id: 'measure',    name: 'Measure',      desc: 'How many cubes long?',   icon: '📏', color: '#7048e8' },
+  { id: 'data',       name: 'My Graph',     desc: 'Read the picture graph', icon: '📊', color: '#12b886' },
+  { id: 'missing',    name: 'Missing No.',  desc: 'Solve the gap',          icon: '❓', color: '#20c997' },
+  { id: 'multiply',   name: 'Multiply',     desc: 'Times tables fun',       icon: '✖️', color: '#f03e3e' },
+  { id: 'divide',     name: 'Share Fairly', desc: 'Divide into groups',     icon: '🍰', color: '#e64980' },
+  { id: 'money',      name: 'Treasure',     desc: 'Count the coins',        icon: '🪙', color: '#fab005' },
+  { id: 'patterns',   name: 'Patterns',     desc: 'What comes next?',       icon: '🧩', color: '#4263eb' },
+  { id: 'oddeven',    name: 'Odd or Even',  desc: 'Pair them up',           icon: '👯', color: '#d6336c' },
+  { id: 'placevalue', name: 'Place Value',  desc: 'Tens, hundreds, more',   icon: '🧮', color: '#0ca678' },
+  { id: 'fraction',   name: 'Fractions',    desc: 'Parts of a whole',       icon: '🍕', color: '#ae3ec9' },
+  { id: 'clock',      name: 'Clock Time',   desc: 'Read the clock',         icon: '🕐', color: '#f76707' },
+  { id: 'round',      name: 'Rounding',     desc: 'Round it to the nearest', icon: '🎯', color: '#5c7cfa' },
+  { id: 'mixed',      name: 'Brain Order',  desc: 'Brackets come first',    icon: '🧠', color: '#82c91e' },
 ];
 
 /* ---------- UI rendering ---------- */
@@ -573,6 +947,80 @@ function renderQuestion(q) {
     visual.appendChild(d);
   }
 
+  if (q.pie) {
+    const d = document.createElement('div');
+    d.className = 'pie-wrap';
+    d.innerHTML = pieSVG(q.pie.parts, q.pie.shaded);
+    visual.appendChild(d);
+  }
+
+  if (q.coins) {
+    const d = document.createElement('div');
+    d.className = 'coins-wrap';
+    q.coins.slice().sort((a, b) => b - a).forEach((v, i) => {
+      const c = document.createElement('span');
+      c.className = 'coin' + (v >= 20 ? ' big' : '');
+      c.style.animationDelay = `${i * 0.06}s`;
+      c.textContent = v;
+      d.appendChild(c);
+    });
+    visual.appendChild(d);
+  }
+
+  if (q.measure) {
+    const wrap = document.createElement('div');
+    wrap.className = 'measure';
+    wrap.style.setProperty('--cells', q.measure.cells);
+    for (let r = 0; r < q.measure.items.length; r++) {
+      const it = q.measure.items[r];
+      const row = document.createElement('div');
+      row.className = `measure-row ${r === 0 ? 'first' : 'second'}`;
+      for (let i = 0; i < q.measure.cells; i++) {
+        const cell = document.createElement('span');
+        cell.className = 'measure-unit' + (i < it.len ? '' : ' empty');
+        cell.textContent = i < it.len ? it.emoji : '';
+        cell.style.animationDelay = `${i * 0.04}s`;
+        row.appendChild(cell);
+      }
+      wrap.appendChild(row);
+    }
+    const ruler = document.createElement('div');
+    ruler.className = 'measure-row';
+    for (let i = 1; i <= q.measure.cells; i++) {
+      const num = document.createElement('span');
+      num.className = 'measure-num';
+      num.textContent = i;
+      ruler.appendChild(num);
+    }
+    wrap.appendChild(ruler);
+    visual.appendChild(wrap);
+  }
+
+  if (q.chart) {
+    const wrap = document.createElement('div');
+    wrap.className = 'chart';
+    for (const k of q.chart) {
+      const col = document.createElement('div');
+      col.className = 'chart-col';
+      const bar = document.createElement('div');
+      bar.className = 'chart-bar';
+      for (let i = 0; i < k.n; i++) {
+        const cell = document.createElement('span');
+        cell.className = 'chart-cell';
+        cell.style.animationDelay = `${i * 0.05}s`;
+        cell.textContent = k.e;
+        bar.appendChild(cell);
+      }
+      const label = document.createElement('span');
+      label.className = 'chart-label';
+      label.textContent = k.n;
+      col.appendChild(bar);
+      col.appendChild(label);
+      wrap.appendChild(col);
+    }
+    visual.appendChild(wrap);
+  }
+
   if (q.groups) {
     for (let g = 0; g < q.groups.count; g++) {
       const box = document.createElement('div');
@@ -649,6 +1097,7 @@ function renderQuestion(q) {
     q.shapeOptions.forEach((sh, i) => {
       const btn = document.createElement('button');
       btn.className = 'opt-btn';
+      btn.dataset.val = sh.w;
       btn.style.background = OPTION_COLORS[i % OPTION_COLORS.length];
       btn.style.animationDelay = `${i * 0.07}s`;
       btn.innerHTML = `<span class="shape-emoji">${sh.e}</span>`;
@@ -659,6 +1108,8 @@ function renderQuestion(q) {
     q.options.forEach((num, i) => {
       const btn = document.createElement('button');
       btn.className = 'opt-btn';
+      if (typeof num === 'string') btn.classList.add('text');
+      btn.dataset.val = String(num);
       btn.style.background = OPTION_COLORS[i % OPTION_COLORS.length];
       btn.style.animationDelay = `${i * 0.07}s`;
       btn.textContent = num;
@@ -669,6 +1120,28 @@ function renderQuestion(q) {
 }
 
 /* ---------- answering ---------- */
+function revealAnswer(q) {
+  $('#options').querySelectorAll('.opt-btn').forEach(b => {
+    if (b.dataset.val === String(q.answer)) b.classList.add('reveal');
+  });
+  document.querySelectorAll('.compare-panel').forEach(p => {
+    if (p.dataset.side === q.answer) p.classList.add('reveal-panel');
+  });
+}
+
+function missQuestion(q) {
+  State.streak = 0;
+  $('#streak-dots').textContent = '';
+  Sound.wrong();
+  State.misses++;
+  if (State.misses >= 2) {
+    revealAnswer(q);
+    Speech.say('Look for the green glow, then tap it!');
+  } else {
+    Speech.say(pick(ENCOURAGE));
+  }
+}
+
 function onAnswer(btn, correct, q) {
   if (State.answered) return;
   if (correct) {
@@ -677,10 +1150,7 @@ function onAnswer(btn, correct, q) {
     handleCorrect();
   } else {
     btn.classList.add('wrong');
-    State.streak = 0;
-    $('#streak-dots').textContent = '';
-    Sound.wrong();
-    Speech.say(pick(ENCOURAGE));
+    missQuestion(q);
   }
 }
 
@@ -693,10 +1163,7 @@ function onCompare(panel, side, q) {
   } else {
     panel.style.opacity = '0.4';
     panel.style.pointerEvents = 'none';
-    State.streak = 0;
-    $('#streak-dots').textContent = '';
-    Sound.wrong();
-    Speech.say(pick(ENCOURAGE));
+    missQuestion(q);
   }
 }
 
@@ -721,6 +1188,8 @@ function handleCorrect() {
     Confetti.launch(150);
     Sound.fanfare();
     Speech.say(`Level up! Welcome to level ${State.level}!`);
+  } else if (State.misses > 0) {
+    Speech.say('Yes! You worked that out, well done!');
   } else {
     Speech.say(pick(PRAISES));
   }
@@ -752,6 +1221,7 @@ function showReward() {
 /* ---------- flow ---------- */
 function nextQuestion() {
   State.answered = false;
+  State.misses = 0;
   State.question = Generators[State.mode](State.level);
   renderQuestion(State.question);
   Speech.say(State.question.speak);
