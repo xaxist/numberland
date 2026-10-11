@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Numberland — self tests</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body { font-family: ui-monospace, Menlo, Consolas, monospace; color: #212529; background: #fff; padding: 20px; }
+  #summary { font-size: 18px; font-weight: 700; margin: 12px 0; }
+  #summary.pass { color: #2b8a3e; } #summary.fail { color: #c92a2a; }
+  #log { white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
+  #controls { margin-bottom: 8px; font-size: 14px; }
+  #controls input { width: 80px; font: inherit; }
+  /* the rendered game DOM the audits measure */
+  #harness { border: 2px dashed #adb5bd; border-radius: 16px; padding: 12px; margin-top: 20px; }
+  #harness .question-text { font-size: 20px; }
+</style>
+</head>
+<body>
+
+<h1>Numberland self tests</h1>
+<div id="controls">
+  seed <input id="seed" value="20261011">
+  questions per mode per level <input id="runs" value="60">
+  <button id="go">Run</button>
+  <span id="elapsed"></span>
+</div>
+<div id="summary">Running…</div>
+<div id="log"></div>
+
+<div id="harness">
+  <div id="level-badge" class="level-badge">Level 1</div>
+  <div id="streak-dots" class="streak-dots"></div>
+  <h2 id="question-text" class="question-text"></h2>
+  <div id="feedback" class="feedback"></div>
+  <div id="visual" class="visual"></div>
+  <div id="options" class="options"></div>
+  <div id="star-counter" class="counter">⭐ <span id="star-count">0</span></div>
+  <div id="trophy-counter" class="counter">🏆 <span id="trophy-count">0</span></div>
+</div>
+
+<script>window.NL_TEST = true;</script>
+<script src="js/game.js"></script>
+<script>
+/* Audits the pure generators and the DOM they produce. Nothing here mutates progress:
+   init() is skipped (NL_TEST) and audio is off, so no timers, speech or storage writes run. */
+
+const seedRand = a => () => {
+  a |= 0; a = (a + 0x6D2B79F5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+let checks = 0;
+const failures = [];
+
+function ok(cond, msg, q) {
+  checks++;
+  if (!cond) failures.push(msg + (q ? `\n    text: ${q.text}\n    answer: ${String(q.answer)}  options: ${JSON.stringify(q.options)}` : ''));
+}
+
+/* ---------- arithmetic recompute: does the answer match the shown equation? ---------- */
+function parse(src) {
+  const s = src.replace(/\s+/g, '');
+  let i = 0;
+  const expr = () => {
+    let v = term();
+    while (s[i] === '+' || s[i] === '-') { const op = s[i++]; const r = term(); v = op === '+' ? v + r : v - r; }
+    return v;
+  };
+  const term = () => {
+    let v = factor();
+    while (s[i] === '*' || s[i] === '/') { const op = s[i++]; const r = factor(); v = op === '*' ? v * r : v / r; }
+    return v;
+  };
+  const factor = () => {
+    if (s[i] === '(') { i++; const v = expr(); if (s[i] === ')') i++; return v; }
+    const j = i;
+    while (i < s.length && s[i] >= '0' && s[i] <= '9') i++;
+    return parseInt(s.slice(j, i), 10);
+  };
+  const v = expr();
+  return i === s.length ? v : null;
+}
+
+function expected(text) {
+  const t = text.replace(/[−–—]/g, '-').replace(/×/g, '*').replace(/÷/g, '/').trim();
+  let m;
+  if ((m = /^What is double (\d+)\?$/.exec(t))) return 2 * +m[1];
+  if ((m = /^What is half of (\d+)\?$/.exec(t))) return +m[1] / 2;
+  if ((m = /^Is (\d+) odd or even\?$/.exec(t))) return +m[1] % 2 === 1 ? 'ODD' : 'EVEN';
+  if ((m = /^(\d+) - \? = (\d+)$/.exec(t))) return +m[1] - +m[2];
+  if ((m = /^(\d+) \+ \? = (\d+)$/.exec(t))) return +m[2] - +m[1];
+  if ((m = /^([\d\s()+\-*/]+) = \?$/.exec(t))) return parse(m[1]);
+  return null;
+}
+
+/* ---------- contrast ---------- */
+const rgb = c => (c.match(/\d+/g) || []).slice(0, 3).map(Number);
+const lum = ([r, g, b]) => {
+  const f = v => (v /= 255) <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+};
+const ratio = (a, b) => {
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+};
+let worstContrast = 99;
+let layoutSkipped = 0;
+
+/* ---------- contract audit ---------- */
+function audit(id, level, q) {
+  const at = `${id} L${level}`;
+  ok(typeof q.text === 'string' && q.text.length > 0, `${at}: empty text`, q);
+  // every question must be speakable: the audience cannot read yet
+  ok(typeof q.speak === 'string' && q.speak.length > 0, `${at}: empty speak`, q);
+  ok(!/NaN|undefined/.test(q.text + q.speak), `${at}: NaN or undefined shown`, q);
+  ok(q.answer !== undefined && q.answer !== null, `${at}: no answer`, q);
+
+  if (q.options) {
+    ok(Array.isArray(q.options) && q.options.length >= 2, `${at}: fewer than 2 options`, q);
+    const labels = q.options.map(String);
+    ok(new Set(labels).size === labels.length, `${at}: duplicate option labels (two buttons glow)`, q);
+    ok(labels.includes(String(q.answer)), `${at}: answer is not among the options`, q);
+    q.options.forEach(v => {
+      if (typeof v === 'number') ok(Number.isInteger(v) && v >= 0 && v < 100000, `${at}: bad numeric option ${v}`, q);
+    });
+  }
+  if (q.type === 'shapes') {
+    ok(q.shapeOptions.some(s => s.w === q.answer), `${at}: shape answer missing`, q);
+  }
+  if (q.compare) {
+    const gap = Math.abs(q.compare.left - q.compare.right);
+    const minGap = level === 1 ? 2 : level === 2 ? 3 : 5;
+    ok(gap >= minGap, `${at}: sides only ${gap} apart — MORE/FEWER cannot be seen`, q);
+    const more = q.compare.left > q.compare.right ? 'left' : 'right';
+    const fewer = q.compare.left < q.compare.right ? 'left' : 'right';
+    ok(q.answer === (q.compare.askMore ? more : fewer), `${at}: answer does not match the MORE/FEWER asked`, q);
+  }
+  if (q.objects) {
+    ok(q.objects.total >= 0, `${at}: negative object count`, q);
+    ok(q.objects.crossed <= q.objects.total, `${at}: more crossed than shown`, q);
+    if (q.objects.split !== undefined) ok(q.answer === q.objects.total, `${at}: picture total ≠ answer`, q);
+    if (q.type === 'count') ok(q.answer === q.objects.total, `${at}: answer ≠ the objects on screen`, q);
+  }
+  if (q.pie) {
+    ok(q.pie.parts >= 2 && q.pie.shaded >= 1 && q.pie.shaded < q.pie.parts, `${at}: impossible pie`, q);
+    ok(q.answer === `${q.pie.shaded}/${q.pie.parts}`, `${at}: answer ≠ picture`, q);
+  }
+  if (q.clock) ok(q.clock.hour >= 1 && q.clock.hour <= 12 && q.clock.minute >= 0 && q.clock.minute < 60, `${at}: impossible clock`, q);
+  if (q.measure) {
+    ok(q.measure.items.every(it => it.len >= 1 && it.len <= q.measure.cells), `${at}: length outside the grid`, q);
+  }
+  if (q.pie) {
+    // a child who knows 1/2 = 3/6 must never be told they are wrong
+    ok(!q.options.some(v => v !== q.answer && sameAmount(v, q.answer)),
+      `${at}: an equivalent fraction is offered as a wrong button`, q);
+  }
+  if (id === 'placevalue' && /\bvalue of the\b/.test(q.text)) {
+    const asked = (q.text.match(/the (\d) in/) || [])[1];
+    ok(asked !== undefined, `${at}: cannot tell which digit is asked about`, q);
+    ok((q.visualText.match(/\d/g) || []).filter(x => x === asked).length === 1,
+      `${at}: the digit ${asked} appears twice — the question has more than one right answer`, q);
+    ok(q.visualText[q.mark] === asked, `${at}: the marked digit is not the one asked about`, q);
+  }
+
+  const want = expected(q.text);
+  if (want !== null && want !== undefined) ok(String(q.answer) === String(want), `${at}: answer does not match the shown equation (expected ${want})`, q);
+  if (id === 'mixed') ok(q.trap !== q.answer, `${at}: the trap equals the answer`, q);
+}
+
+/* ---------- DOM audit ---------- */
+function domAudit(id, level, q) {
+  State.mode = id; State.level = level; State.streak = 0; State.answered = false; State.misses = 0;
+  $('#feedback').innerHTML = '';
+  try { renderQuestion(q); } catch (e) { failures.push(`${id} L${level}: renderQuestion threw ${e.message}`); return; }
+
+  const btns = [...document.querySelectorAll('#options .opt-btn')];
+  if (q.options) {
+    checks++;
+    if (btns.length !== q.options.length) failures.push(`${id} L${level}: rendered ${btns.length} of ${q.options.length} options`);
+    const hits = btns.filter(b => b.dataset.val === String(q.answer));
+    ok(hits.length === 1, `${id} L${level}: ${hits.length} buttons match the answer`, q);
+    btns.forEach(b => {
+      const cs = getComputedStyle(b);
+      const bg = rgb(cs.backgroundColor);
+      if (!bg.length || bg.length < 3) return;
+      if (cs.backgroundColor === 'rgba(0, 0, 0, 0)') return;
+      const r = ratio(rgb(cs.color), bg);
+      worstContrast = Math.min(worstContrast, r);
+      ok(r >= 3, `${id} L${level}: option contrast ${r.toFixed(2)}:1`, q);
+    });
+  }
+
+  if (q.objects && q.objects.crossed > 0) {
+    document.getAnimations().forEach(a => { try { a.finish(); } catch (e) {} });
+    const xs = [...document.querySelectorAll('#visual .obj.crossed')];
+    ok(xs.length === q.objects.crossed, `${id} L${level}: ${xs.length} crossed objects, expected ${q.objects.crossed}`, q);
+    ok(xs.every(o => parseFloat(getComputedStyle(o).opacity) > 0.2), `${id} L${level}: crossed objects faded away`, q);
+    ok(document.querySelectorAll('#visual .visual-eq').length === 1, `${id} L${level}: subtraction picture has no "=" cue`, q);
+  }
+
+  // the measurement row must draw exactly the cubes that cover the object — no phantom grid
+  if (q.measure) {
+    const rows = [...document.querySelectorAll('#visual .measure-row')];
+    ok(rows.length === q.measure.items.length, `${id} L${level}: ${rows.length} measure rows for ${q.measure.items.length} objects`, q);
+    rows.forEach((row, i) => {
+      const cells = row.querySelectorAll('.measure-unit');
+      ok(cells.length === q.measure.items[i].len, `${id} L${level}: row ${i} draws ${cells.length} cells for a length of ${q.measure.items[i].len}`, q);
+    });
+    ok(!document.querySelector('#visual .measure-unit.empty'), `${id} L${level}: empty cells are drawn again`, q);
+    // the original defect: a child who counted the boxes instead of the snake got the box
+    // count, and it was on offer. Two rows may still offer each other's length on purpose.
+    if (q.measure.items.length === 1) {
+      const drawn = rows[0].querySelectorAll('.measure-unit').length;
+      ok(q.options.every(v => v === q.answer || v !== drawn),
+        `${id} L${level}: ${drawn} boxes are drawn and ${drawn} is offered as the wrong answer`, q);
+    }
+    if (window.innerWidth > 0) {
+      const vis = document.getElementById('visual');
+      ok(vis.scrollWidth <= vis.clientWidth + 1, `${id} L${level}: the cube row overflows the screen`, q);
+    } else layoutSkipped++;
+  }
+
+  // exactly one digit must be highlighted, and it must be the one asked about
+  if (q.mark !== undefined) {
+    const marks = [...document.querySelectorAll('#visual .digit-mark')];
+    ok(marks.length === 1, `${id} L${level}: ${marks.length} digits highlighted, expected 1`, q);
+    ok(marks.length === 1 && q.text.includes(marks[0].textContent), `${id} L${level}: highlighted digit is not the one in the question`, q);
+  }
+
+  // compare panels must show the counts they claim
+  if (q.compare) {
+    const panels = [...document.querySelectorAll('#visual .compare-panel')];
+    ok(panels.length === 2, `${id} L${level}: ${panels.length} compare panels`, q);
+    const counts = panels.map(p => p.querySelectorAll('.obj').length);
+    ok(counts[0] === q.compare.left && counts[1] === q.compare.right, `${id} L${level}: panels show ${counts} for ${q.compare.left}/${q.compare.right}`, q);
+    if (window.innerWidth > 0) {
+      const widths = panels.map(p => p.getBoundingClientRect().width);
+      ok(Math.abs(widths[0] - widths[1]) < 2, `${id} L${level}: panels are unequal width, so "more" is not comparable`, q);
+    } else layoutSkipped++;
+  }
+}
+
+/* ---------- speech queue (fake speechSynthesis, no audio) ---------- */
+function speechAudit() {
+  const spoken = [];
+  const realProp = Object.getOwnPropertyDescriptor(window, 'speechSynthesis');
+  const fake = { speak(u) { spoken.push(u.text); fake.cur = u; }, cancel() {}, getVoices() { return []; } };
+  Object.defineProperty(window, 'speechSynthesis', { value: fake, configurable: true });
+  const saved = { en: Speech.enabled, cur: Speech.current, pend: Speech.pending };
+  Speech.enabled = true; Speech.current = null; Speech.pending = [];
+
+  Speech.say('How many apples? Tap them to count, then tap the answer!', 'question');
+  Speech.say('3', 'count'); Speech.say('1', 'count'); Speech.say('5', 'count');
+  ok(spoken.length === 1, 'speech: a count-along tap interrupted the question');
+  ok(Speech.pending.length === 1 && Speech.pending[0].text === '5', 'speech: counts piled up in the queue');
+  fake.cur.onend();
+  ok(spoken[1] === '5', 'speech: the queued count never played after the question');
+
+  Speech.say('Is 7 odd or even?', 'question');
+  Speech.say('Great job!', 'praise');
+  ok(Speech.pending.length === 1, 'speech: praise was not queued behind the question');
+  Speech.say('Count the stars!', 'question');
+  ok(Speech.current.text === 'Count the stars!', 'speech: a new question did not take over');
+  Speech.say('Yes! You worked that out!', 'answer');
+  ok(Speech.current.text === 'Yes! You worked that out!' && !Speech.pending.length,
+    'speech: praise for an answered question should not wait behind it');
+
+  Speech.stop();
+  ok(!Speech.current && !Speech.pending.length, 'speech: stop left something in the queue');
+
+  // counting must stop once the question is answered
+  const q = Generators.count(1);
+  State.mode = 'count'; State.level = 1; State.streak = 0; State.misses = 0; State.answered = true;
+  renderQuestion(q);
+  spoken.length = 0;
+  const obj = document.querySelector('#visual .obj');
+  obj.click();
+  ok(!obj.classList.contains('counted') && !spoken.length, 'speech: tapping objects still counts after answering');
+
+  Speech.enabled = saved.en; Speech.current = saved.cur; Speech.pending = saved.pend;
+  if (realProp) Object.defineProperty(window, 'speechSynthesis', realProp);
+}
+
+/* ---------- pure helpers + one behavioural click ---------- */
+const hx = h => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16));
+
+function logicAudit() {
+  ok(sameAmount('1/2', '2/4') && sameAmount('3/6', '1/2') && !sameAmount('1/2', '1/3'), 'sameAmount: fraction equivalence is wrong');
+  ok(sameAmount(7, 7) && sameAmount('ODD', 'ODD') && !sameAmount('EVEN', 'ODD'), 'sameAmount: plain answers must still match exactly');
+
+  for (const hex of OPTION_COLORS) {
+    const chosen = hx(inkFor(hex));
+    const best = Math.max(ratio([255, 255, 255], hx(hex)), ratio([33, 37, 41], hx(hex)));
+    ok(Math.abs(ratio(chosen, hx(hex)) - best) < 0.01, `inkFor(${hex}): picked an ink that reads worse`);
+  }
+
+  for (const den of [2, 3, 4, 5, 6, 8, 10, 12]) {
+    for (let num = 1; num < den; num++) {
+      const correct = `${num}/${den}`;
+      const opts = fracOptions(den, num, 4);
+      ok(opts.includes(correct), `fracOptions ${correct}: answer missing`);
+      ok(new Set(opts).size === opts.length, `fracOptions ${correct}: duplicates`);
+      ok(opts.every(v => v === correct || !sameAmount(v, correct)), `fracOptions ${correct}: an equivalent form is a distractor`);
+    }
+  }
+
+  MODES.forEach(m => ok(typeof REDIRECT[m.id] === 'string' && REDIRECT[m.id].length > 8, `REDIRECT: no hint for ${m.id}`));
+
+  // the Phase 2 acceptance test: a child who taps 1/2 under a 6/12 pizza must be celebrated
+  const saved = { stars: State.stars, trophies: State.trophies, mode: State.mode, level: State.level, launch: Confetti.launch };
+  Confetti.launch = () => {};
+  State.stars = 0; State.trophies = 0;
+  State.mode = 'fraction'; State.level = 3; State.streak = 0; State.misses = 0; State.answered = false;
+  renderQuestion({
+    type: 'options', text: 'What fraction of the pizza is shaded?', speak: 'x',
+    pie: { parts: 12, shaded: 6 }, options: ['1/2', '3/4', '7/12', '5/6'], answer: '6/12',
+  });
+  const half = [...document.querySelectorAll('#options .opt-btn')].find(b => b.dataset.val === '1/2');
+  half.click();
+  ok(half.classList.contains('right') && State.answered, 'tapping 1/2 under a 6/12 pizza was marked wrong');
+  clearTimeout(State.timer);
+  Object.assign(State, { stars: saved.stars, trophies: saved.trophies, mode: saved.mode, level: saved.level, answered: false, timer: null });
+  Confetti.launch = saved.launch;
+  State.save();
+}
+
+function run() {
+  const t0 = performance.now();
+  checks = 0; failures.length = 0; worstContrast = 99; layoutSkipped = 0;
+
+  Math.random = seedRand(+$('#seed').value || 1);
+  Sound.enabled = false; Speech.enabled = false;
+  const runs = Math.max(1, +$('#runs').value || 1);
+
+  for (const m of MODES) {
+    for (let level = 1; level <= 4; level++) {
+      for (let i = 0; i < runs; i++) {
+        let q;
+        try { q = Generators[m.id](level); } catch (e) { failures.push(`${m.id} L${level}: generator threw ${e.message}`); continue; }
+        audit(m.id, level, q);
+        domAudit(m.id, level, q);
+      }
+    }
+  }
+
+  speechAudit();
+  logicAudit();
+
+  const s = $('#summary');
+  const questions = MODES.length * 4 * runs;
+  const skipped = layoutSkipped ? ` (${layoutSkipped} layout checks skipped: viewport is ${window.innerWidth}px wide)` : '';
+  if (failures.length) { s.className = 'fail'; s.textContent = `${failures.length} FAILURES of ${checks} checks over ${questions} questions`; }
+  else { s.className = 'pass'; s.textContent = `PASS — ${checks} checks over ${questions} questions${skipped}`; }
+
+  $('#elapsed').textContent = ` ${Math.round(performance.now() - t0)}ms, seed ${$('#seed').value}`;
+  const groups = new Map();
+  failures.forEach(f => { const k = f.split('\n')[0]; groups.set(k, (groups.get(k) || 0) + 1); });
+  const byCause = [...groups.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n}× ${k}`).join('\n');
+  $('#log').textContent =
+    `worst option contrast: ${worstContrast === 99 ? 'n/a' : worstContrast.toFixed(2) + ':1'} (floor 3:1)\n\n` +
+    (failures.length ? `${byCause}\n\n--- first of each ---\n` + [...groups.keys()].slice(0, 12)
+      .map(k => failures.find(f => f.split('\n')[0] === k)).join('\n\n') : '');
+}
+
+$('#go').addEventListener('click', run);
+run();
+</script>
+</body>
+</html>
