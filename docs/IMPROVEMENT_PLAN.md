@@ -137,6 +137,23 @@ full. Reach Level 2 and hear "Level up!" complete. Back button stops speech.
 
 ### Phase 2 — picture honesty *(RC2, RC3)*
 
+> **Status: done 2026-10-12.** Pre-change snapshot in `backup/2026-10-12-pre-phase2/`. The three
+> defect families the harness was counting are now **hard assertions and are at zero**: measure
+> distractors drawn from the grid 112 → 0, fractions offered an equivalent form as wrong 15 → 0,
+> ambiguous place-value digits 7 → 0 (77,658 checks, 0 failures).
+> Two deviations from the plan as written, both for phone fit:
+> **compare** was specified as "cap 12 per side", which would have lowered the documented ceiling of
+> 20. Instead the ceiling stays, the objects are laid out in rows of four (20 objects = 5 rows, so
+> the hardest question still fits a 667px screen), and the generator now refuses sides closer than
+> 2/3/5 apart by level — the unreadable 19-vs-20 case cannot be generated at all.
+> **measure** was specified as "ruler digits to 1rem"; the ruler was deleted instead. A number strip
+> under the cubes printed the answer at the right edge and its 20 digits were the thing overflowing
+> the screen. The cubes themselves are now tappable and count aloud, which is what the ruler was
+> trying to teach.
+> Also fixed beyond the table: `fraction` says "pizza" (the pie was never an apple), first wrong tap
+> speaks a per-mode hint from `REDIRECT`, and the cube row sizes by what is drawn (short rows get
+> 46px cubes instead of a 13px grid).
+
 | Item | Change | Closes |
 |------|--------|--------|
 | Measure | Bordered cells stop at `len` (no empty boxes); drop `cells` and `cells - len` from the candidates; ruler digits to 1rem and mentioned in the speech | H5, M8 |

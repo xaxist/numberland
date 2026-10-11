@@ -44,6 +44,11 @@ repository root.
    - **The picture must prove the answer.** Crossed-out subtraction objects stay on screen
      (faded + red strike line) — never animate them to `opacity: 0`, and never let a `forwards`
      fill override the declared opacity.
+   - **A distractor must never be an artefact of the picture.** Measuring cubes are drawn only
+     where the object actually covers (a bordered empty slot becomes a wrong answer to count);
+     a fraction distractor is never an equivalent form of the answer, and `sameAmount` accepts one
+     if a child offers it. Comparison sides must differ by enough to be *seen* (≥2 at level 1,
+     ≥3 at level 2, ≥5 above), and place-value digits must be unique and highlighted.
    - **Text colour on every coloured fill goes through `inkFor(hex)`**, which picks white or
      near-black by WCAG luminance. Hard-coded white on the option colours measured 1.8:1 on the
      teal and 1.9:1 on the orange. Keep the worst ratio above 3:1 (`src/tests.html` asserts it).
@@ -100,9 +105,13 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
   `misses` counts wrong taps on the current question and drives the reveal hint.
 - **Option builders** — `numberOptions` (near-miss distractors), `optionSet` (deduped candidate
   list, works for numbers and strings), `nearOptions`, `multiplyOptions` (adjacent-multiple
-  distractors), `pvOptions` (digit-swap distractors), `fracOptions` (fraction distractors),
-  `clockOptions` (`jitter` widens minute distractors at level 4), plus `fmtTime`,
+  distractors), `pvOptions` (digit-swap distractors), `fracOptions` (fraction distractors — it
+  rejects any candidate equal to the answer, so `1/2` is never offered as wrong under `3/6`),
+  `sameAmount(value, answer)` + `fractionParts` (the equivalence rule, also used when grading a
+  tap), `clockOptions` (`jitter` widens minute distractors at level 4), plus `fmtTime`,
   `clockSVG(hour, minute)` and `pieSVG(parts, shaded)` which render inline SVG.
+- **`REDIRECT`** — map of mode id → one spoken hint for a first wrong tap. Keep it about *how to
+  look at the picture*, never the answer, and only reference visuals that exist at every level.
 - **`Generators`** — one function per game mode, keyed by mode id. Each returns a
   **question object** (contract below).
 - **`MODES`** — registry array of `{ id, name, desc, icon, color }`; array order is the
@@ -123,15 +132,15 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
 | `q.answer`    | Correct answer; for `options` compared with `===` to the option value (numbers or strings like `'ODD'`, `'7:30'`) |
 | `q.options`   | Array of option values → rendered as big buttons |
 | `q.objects`   | `{ emoji, total, crossed, split? }` — tappable count-along objects; `crossed` rightmost items stay visible, faded with a red strike line, and a `= ❓` cue follows a `type: 'sub'` row; `split` inserts a ➕ after N items (addition) |
-| `q.visualText`| Big centered text (equations, sequences) |
+| `q.visualText`| Big centered text (equations, sequences). With `q.mark: <index>` the character at that index is highlighted (`.digit-mark`) — place value needs it so "the value of the 7" points at one visible digit |
 | `q.groups`    | `{ count, size, emoji }` — count boxes of size emoji (multiplication groups) |
 | `q.pairs`     | `{ n, emoji }` — n emoji in boxes of 2, odd leftover highlighted (odd/even) |
 | `q.clock`     | `{ hour, minute }` — renders analog SVG clock |
 | `q.pie`       | `{ parts, shaded }` — SVG pie for fractions; `q.answer` is the string `'shaded/parts'` |
 | `q.coins`     | Array of coin values — rendered as gold coins, biggest first (treasure/money) |
-| `q.measure`   | `{ cells, items: [{ emoji, len }] }` — cube ruler grid; a numbered cube row is drawn under each item |
+| `q.measure`   | `{ cells, items: [{ emoji, len }] }` — only the cubes that cover each object are drawn (never empty grid slots), one row per item, left-aligned so two lengths compare, each cube tappable to count along. `cells` is the level's length budget, not a drawn grid |
 | `q.chart`     | Array of `{ e, w, n }` — picture graph columns, height `n`, count label under each |
-| `q.compare`   | `{ left, right, emoji }` — two panels, `q.answer` is `'left'`/`'right'` |
+| `q.compare`   | `{ left, right, emoji, askMore }` — two equal panels laid out in rows of four; `q.answer` is `'left'`/`'right'` and `askMore` records which was asked, so the tests can re-derive the answer independently |
 | `q.shapeOptions` | Array of `{ e, w }` shape objects |
 
 ### The 20 games (home grid order = difficulty ladder, easiest → hardest)
@@ -170,7 +179,8 @@ this ladder rather than appending it.
   chime + spoken praise, streak +1.
 - **3-streak → level up** (max level 4): confetti, fanfare, spoken "Level up!".
 - **Every 10 stars → trophy screen**: big confetti, fanfare, trophy count bumps in the top bar.
-- Wrong answer: option dims and disables, spoken encouragement, streak resets. No penalty.
+- Wrong answer: option dims and disables, streak resets, no penalty. The **first** wrong tap speaks a
+  hint from `REDIRECT[mode]` about how to look at the picture (never the answer); the second reveals.
 - Second wrong tap on the same question: `revealAnswer(q)` glows the correct option (or panel)
   and speech says "Look for the green glow, then tap it!". `State.misses` resets each question.
 - Answering correctly after having missed: spoken "Yes! You worked that out, well done!"
@@ -207,7 +217,8 @@ The whole test suite, in the browser, with no dependencies. It sets `window.NL_T
 before loading `game.js` — which is why the auto-init at the bottom of that file is guarded by
 `if (!window.NL_TEST)` — then disables `Sound`/`Speech`, reseeds `Math.random` (mulberry32, so a
 failure is reproducible from the seed in the URL bar), and runs every generator × level × N
-questions through a **contract** and a **DOM** audit, plus one **speech** audit at the end:
+questions through a **contract** and a **DOM** audit, plus one **speech** and one **logic** audit
+at the end:
 
 - **contract** — text and `speak` non-empty, no `NaN`/`undefined` leaking into wording, answer
   present and unique among the options (duplicate labels mean `revealAnswer` glows two buttons),
@@ -215,18 +226,24 @@ questions through a **contract** and a **DOM** audit, plus one **speech** audit 
   `compare`, `clock`, `measure`), and for every arithmetic question the **shown equation is
   re-evaluated by a small recursive-descent parser and compared to `q.answer`**;
 - **DOM** — `renderQuestion` must not throw, exactly one button may match the answer, option text
-  must clear 3:1 against its fill, and crossed objects must still be visible after all CSS
-  animations finish (`document.getAnimations().forEach(a => a.finish())` — measure only after this,
-  or `popIn`'s `scale(0)` start frame collapses every rect);
+  must clear 3:1 against its fill, crossed objects must still be visible after all CSS animations
+  finish, measure rows must draw exactly `len` cubes and never an empty slot, place value must
+  highlight one and only one digit — the one it asks about — and compare panels must be equal width
+  and show the counts they claim (`document.getAnimations().forEach(a => a.finish())` before
+  measuring, or `popIn`'s `scale(0)` start frame collapses every rect);
 - **speech** — swaps in a fake `speechSynthesis` (no audio) and asserts the queue: a count-along tap
   never interrupts the instruction, queued counts collapse to the newest and play after it, praise
   waits behind an unfinished question but cuts in once it is answered, `stop()` empties everything,
-  and tapping objects after answering does nothing at all.
+  and tapping objects after answering does nothing at all;
+- **logic** — exercises the pure helpers (`sameAmount`, `inkFor` really picks the readable ink of
+  the two, `fracOptions` never offers an equivalent form for every denominator in use), checks each
+  mode has a `REDIRECT` hint, and clicks `1/2` under a `6/12` pizza expecting to be told well.
 
-Known-but-unfinished defects from `docs/IMPROVEMENT_PLAN.md` are counted separately (amber) rather
-than failed, so the page reads PASS while the roadmap is in progress. Default is 60 questions per
-mode per level ≈ 75,000 checks in ~13s; raise `runs` to widen the sweep. **Run this page after any
-generator change** — there is no other test harness.
+Some assertions are geometric, and a browser surface that reports `innerWidth === 0` (the embedded
+in-app browser does) cannot answer them — those count themselves as **skipped** and the summary says
+how many, so a green page never claims to have tested fit. Run the page in a normal window for the
+layout checks. Default is 60 questions per mode per level ≈ 77,600 checks in ~14s; raise `runs` to
+widen the sweep. **Run this page after any generator change** — there is no other test harness.
 
 Manual checks still needed: correct/incorrect answers score gently, back button stops speech,
 console has no errors.

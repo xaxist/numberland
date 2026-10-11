@@ -31,6 +31,31 @@ const PRAISES = ['Great job!', 'Awesome!', 'You did it!', 'Super star!', 'Fantas
 const PRAISE_EMOJI = ['🎉', '🌟', '🦄', '🥳', '👏', '🌈', '🚀', '💫'];
 const ENCOURAGE = ['Try again!', 'Almost! Have another go!', 'You can do it!'];
 
+/* First wrong tap gets a hint about how to look at the picture, not a shrug. Spoken,
+   because the audience cannot read it — and never the answer itself. */
+const REDIRECT = {
+  count: 'Tap each one to count them, then tap the answer.',
+  find: 'Listen again. Tap the speaker to hear the number.',
+  compare: 'Look at both sides. Did we want more, or fewer?',
+  shapes: 'Look at the shape we want, then tap the one that matches.',
+  add: 'Tap the groups and count them all.',
+  sub: 'Count the ones that are not crossed out.',
+  measure: 'Tap the cubes to count them.',
+  data: 'Compare the columns. Tallest is the most, shortest is the fewest.',
+  money: 'Add the biggest coin first, then count on.',
+  doublehalf: 'Double means two lots of the same number. Half means sharing between two.',
+  missing: 'Which number fits in the gap? Count on from the numbers you can see.',
+  oddeven: 'Pair them up. If one is left over, it is odd.',
+  multiply: 'Count the boxes, then count how many are in each box.',
+  patterns: 'What is the rule? Count on from the last number.',
+  divide: 'Share them out one at a time to each friend.',
+  clock: 'The short hand points at the hour, the long hand at the minutes.',
+  placevalue: 'Ones, tens, hundreds — which column is that digit in?',
+  fraction: 'Count all the parts, then count the shaded ones.',
+  round: 'Find the two numbers it sits between, then pick the closer one.',
+  mixed: 'Brackets first, then multiply or divide, then add or subtract.',
+};
+
 const OPTION_COLORS = ['#ff6b6b', '#ffa94d', '#4dabf7', '#9775fa', '#f783ac', '#38d9a9'];
 
 /* White alone measured 1.8:1 on the teal and 1.9:1 on the orange answer buttons,
@@ -304,17 +329,29 @@ function clockOptions(hour, minute, count, jitter = false) {
   return shuffle([...set]);
 }
 
+/* 1/2 and 3/6 name the same amount. That is true both for an answer a child may give
+   (which must be accepted) and for a distractor we must never offer as wrong. */
+function fractionParts(v) {
+  return /^\d+\/\d+$/.test(String(v)) ? String(v).split('/').map(Number) : null;
+}
+
+function sameAmount(value, answer) {
+  if (value === answer) return true;
+  const a = fractionParts(value), b = fractionParts(answer);
+  return !!a && !!b && a[0] * b[1] === a[1] * b[0];
+}
+
 function fracOptions(den, num, count) {
   const correct = `${num}/${den}`;
   const cands = [];
-  if (num + 1 <= den) cands.push(`${num + 1}/${den}`);
-  if (num - 1 >= 1) cands.push(`${num - 1}/${den}`);
-  if (den - num >= 1 && den - num !== num) cands.push(`${den - num}/${den}`);
-  cands.push(`${num}/${den + 2}`, `${num}/${den * 2}`);
-  for (const f of ['1/2', '1/3', '1/4', '2/3', '3/4', '1/6', '5/6', '3/8']) {
-    if (f !== correct && !cands.includes(f)) cands.push(f);
-  }
-  return optionSet(correct, [...new Set(cands)], count, 0);
+  const push = f => { if (!sameAmount(f, correct) && !cands.includes(f)) cands.push(f); };
+  if (num + 1 <= den) push(`${num + 1}/${den}`);
+  if (num - 1 >= 1) push(`${num - 1}/${den}`);
+  if (den - num >= 1) push(`${den - num}/${den}`);
+  push(`${num}/${den + 2}`);
+  push(`${num}/${den * 2}`);
+  for (const f of ['1/2', '1/3', '1/4', '2/3', '3/4', '1/6', '5/6', '3/8']) push(f);
+  return optionSet(correct, cands, count, 0);
 }
 
 function pieSVG(parts, shaded) {
@@ -444,9 +481,13 @@ const Generators = {
 
   compare(level) {
     const max = level === 1 ? 5 : level === 2 ? 10 : 20;
-    let left = rand(1, max);
+    const minGap = level === 1 ? 2 : level === 2 ? 3 : 5;
+    const left = rand(1, max);
     let right = rand(1, max);
-    while (right === left) right = rand(1, max);
+    // "Which has more" must be answerable by looking: 20 next to 19 is a counting exercise,
+    // not a comparison, and it cannot be seen in a phone-sized panel at all.
+    let guard = 0;
+    while (Math.abs(right - left) < minGap && guard++ < 80) right = rand(1, max);
     const askMore = Math.random() < 0.5;
     const obj = pick(OBJECTS);
     const winner = askMore ? (left > right ? 'left' : 'right') : (left < right ? 'left' : 'right');
@@ -456,7 +497,7 @@ const Generators = {
       speak: askMore
         ? `Which side has more ${obj.w}? Tap the side!`
         : `Which side has fewer ${obj.w}? Tap the side!`,
-      compare: { left, right, emoji: obj.e },
+      compare: { left, right, emoji: obj.e, askMore },
       answer: winner,
     };
   },
@@ -639,9 +680,6 @@ const Generators = {
 
   placevalue(level) {
     if (level >= 4) {
-      const digits = { th: rand(1, 9), h: rand(0, 9), t: rand(0, 9), o: rand(1, 9) };
-      const values = { th: digits.th * 1000, h: digits.h * 100, t: digits.t * 10, o: digits.o };
-      const n = values.th + values.h + values.t + values.o;
       if (Math.random() < 0.5) {
         const th = rand(1, 6), h = rand(0, 9), t = rand(0, 9), o = rand(1, 9);
         const made = th * 1000 + h * 100 + t * 10 + o;
@@ -654,14 +692,23 @@ const Generators = {
           answer: made,
         };
       }
+      // Four different digits: "the value of the 2 in 2123" has two right answers, which is
+      // not a question. A repeated digit made the question formally unanswerable.
+      const ds = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
+      if (ds[0] === 0) { const j = rand(1, 9); ds[0] = ds[j]; ds[j] = 0; }
+      const digits = { th: ds[0], h: ds[1], t: ds[2], o: ds[3] };
+      const values = { th: digits.th * 1000, h: digits.h * 100, t: digits.t * 10, o: digits.o };
+      const n = values.th + values.h + values.t + values.o;
+      const spot = { th: 0, h: 1, t: 2, o: 3 };
       const place = pick(['th', 'h', 't', 'o'].filter(p => digits[p] > 0));
       const answer = values[place];
       const d = digits[place];
       return {
         type: 'options',
         text: `What is the value of the ${d} in ${n}?`,
-        speak: `What is the value of the digit ${d} in the number ${n}?`,
+        speak: `What is the value of the highlighted digit ${d} in the number ${n}?`,
         visualText: String(n),
+        mark: spot[place],
         options: optionSet(answer, [d, d * 10, d * 100, d * 1000, answer * 10, answer / 10], 4, 1),
         answer,
       };
@@ -739,11 +786,10 @@ const Generators = {
   fraction(level) {
     const den = level === 1 ? 2 : level === 2 ? pick([2, 4]) : level === 3 ? pick([3, 4, 6]) : pick([5, 6, 8, 10, 12]);
     const num = rand(1, den - 1);
-    const obj = pick(OBJECTS);
     return {
       type: 'options',
-      text: `What fraction of the ${obj.s} is shaded?`,
-      speak: `What fraction of this ${obj.s} is shaded? Count all the parts, then count the shaded ones!`,
+      text: 'What fraction of the pizza is shaded?',
+      speak: 'What fraction of this pizza is shaded? Count all the parts, then count the shaded ones!',
       pie: { parts: den, shaded: num },
       options: fracOptions(den, num, level === 1 ? 3 : 4),
       answer: `${num}/${den}`,
@@ -784,7 +830,7 @@ const Generators = {
       return {
         type: 'options',
         text: `How much longer is the ${objA.s} than the ${objB.s}?`,
-        speak: `Measure both. How much longer is the ${objA.s} than the ${objB.s}?`,
+        speak: `Measure both! Tap the cubes on each row. How much longer is the ${objA.s} than the ${objB.s}?`,
         measure: { cells, items: [{ emoji: objA.e, len: long }, { emoji: objB.e, len: short }] },
         options: optionSet(diff, [diff - 1, diff + 1, diff - 2, diff + 2, long, short].filter(v => v > 0), 4, 1),
         answer: diff,
@@ -793,9 +839,11 @@ const Generators = {
     return {
       type: 'options',
       text: `How many cubes long is the ${objA.s}?`,
-      speak: `How many cubes long is the ${objA.s}? Count the cubes!`,
+      speak: `How many cubes long is the ${objA.s}? Tap the cubes to count them!`,
       measure: { cells, items: [{ emoji: objA.e, len: lenA }] },
-      options: optionSet(lenA, [lenA - 1, lenA + 1, lenA - 2, lenA + 2, cells, cells - lenA].filter(v => v > 0), level === 1 ? 3 : 4, 1),
+      // The grid width is never a plausible answer once the row only shows the cubes that
+      // cover the object — offering it taught children to count the boxes instead.
+      options: optionSet(lenA, [lenA - 1, lenA + 1, lenA - 2, lenA + 2].filter(v => v > 0), level === 1 ? 3 : 4, 1),
       answer: lenA,
     };
   },
@@ -1040,7 +1088,18 @@ function renderQuestion(q) {
   if (q.visualText) {
     const d = document.createElement('div');
     d.className = 'visual-text';
-    d.textContent = q.visualText;
+    if (q.mark !== undefined) {
+      // Built from text nodes, not markup, so nothing about the question can inject HTML.
+      String(q.visualText).split('').forEach((ch, i) => {
+        if (i !== q.mark) { d.appendChild(document.createTextNode(ch)); return; }
+        const m = document.createElement('span');
+        m.className = 'digit-mark';
+        m.textContent = ch;
+        d.appendChild(m);
+      });
+    } else {
+      d.textContent = q.visualText;
+    }
     visual.appendChild(d);
   }
 
@@ -1074,29 +1133,33 @@ function renderQuestion(q) {
   if (q.measure) {
     const wrap = document.createElement('div');
     wrap.className = 'measure';
-    wrap.style.setProperty('--cells', q.measure.cells);
+    // Size the cubes by what is drawn, but never below a comfortable tap: a 20-cube row
+    // wraps into two tidy lines instead of shrinking to 13px boxes.
+    wrap.style.setProperty('--cells', Math.min(Math.max(...q.measure.items.map(it => it.len)), 12));
     for (let r = 0; r < q.measure.items.length; r++) {
       const it = q.measure.items[r];
       const row = document.createElement('div');
       row.className = `measure-row ${r === 0 ? 'first' : 'second'}`;
-      for (let i = 0; i < q.measure.cells; i++) {
+      let counted = 0;
+      // Only the cubes that cover the object are drawn. Bordered empty slots used to turn
+      // the grid width into an answer, and children counted boxes instead of the snake.
+      for (let i = 0; i < it.len; i++) {
         const cell = document.createElement('span');
-        cell.className = 'measure-unit' + (i < it.len ? '' : ' empty');
-        cell.textContent = i < it.len ? it.emoji : '';
+        cell.className = 'measure-unit';
+        cell.textContent = it.emoji;
         cell.style.animationDelay = `${i * 0.04}s`;
+        cell.addEventListener('click', () => {
+          if (State.answered || cell.classList.contains('counted')) return;
+          counted++;
+          cell.classList.add('counted');
+          cell.dataset.count = counted;
+          Sound.init(); Sound.count(counted);
+          Speech.say(String(counted), 'count');
+        });
         row.appendChild(cell);
       }
       wrap.appendChild(row);
     }
-    const ruler = document.createElement('div');
-    ruler.className = 'measure-row';
-    for (let i = 1; i <= q.measure.cells; i++) {
-      const num = document.createElement('span');
-      num.className = 'measure-num';
-      num.textContent = i;
-      ruler.appendChild(num);
-    }
-    wrap.appendChild(ruler);
     visual.appendChild(wrap);
   }
 
@@ -1220,7 +1283,7 @@ function renderQuestion(q) {
       btn.style.color = inkFor(OPTION_COLORS[i % OPTION_COLORS.length]);
       btn.style.animationDelay = `${i * 0.07}s`;
       btn.textContent = num;
-      btn.addEventListener('click', () => onAnswer(btn, num === q.answer, q));
+      btn.addEventListener('click', () => onAnswer(btn, sameAmount(num, q.answer), q));
       options.appendChild(btn);
     });
   }
@@ -1245,7 +1308,7 @@ function missQuestion(q) {
     revealAnswer(q);
     Speech.say('Look for the green glow, then tap it!');
   } else {
-    Speech.say(pick(ENCOURAGE));
+    Speech.say(REDIRECT[State.mode] || pick(ENCOURAGE));
   }
 }
 
