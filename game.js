@@ -164,6 +164,7 @@ const State = {
   streak: 0,
   answered: false,
   question: null,
+  timer: null,
   save() {
     localStorage.setItem('nl_stars', String(this.stars));
     localStorage.setItem('nl_trophies', String(this.trophies));
@@ -470,7 +471,9 @@ function handleCorrect() {
   }
 
   const milestone = State.stars % 10 === 0;
-  setTimeout(() => {
+  clearTimeout(State.timer);
+  State.timer = setTimeout(() => {
+    State.timer = null;
     fb.classList.add('hidden');
     if (milestone) {
       showReward();
@@ -507,6 +510,9 @@ function startMode(modeId) {
 }
 
 function goHome() {
+  clearTimeout(State.timer);
+  State.timer = null;
+  $('#feedback').classList.add('hidden');
   Speech.stop();
   renderHome();
   showScreen('screen-home');
