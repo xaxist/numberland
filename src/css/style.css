@@ -245,13 +245,13 @@ body {
 .mode-card:active { transform: scale(0.94); box-shadow: 0 2px 0 rgba(0,0,0,.12); }
 .mode-icon { font-size: 3.2rem; line-height: 1; filter: drop-shadow(0 3px 2px rgba(0,0,0,.2)); }
 .mode-name { font-size: 1.25rem; font-weight: 700; text-shadow: 0 2px 0 rgba(0,0,0,.15); }
-.mode-desc { font-size: .85rem; opacity: .92; }
+.mode-desc { font-size: .85rem; }
 
 /* ---------- game screen ---------- */
 .game-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 8px; }
 .level-badge {
   background: var(--purple);
-  color: #fff;
+  color: #212529;
   font-weight: 700;
   border-radius: 999px;
   padding: 5px 14px;
@@ -301,12 +301,23 @@ body {
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 2px 0 rgba(0,0,0,.2);
 }
-.obj.crossed { opacity: .35; filter: grayscale(.8); animation: flyAway .6s ease forwards; }
+/* The taken-away items are the proof of the answer, so they stay on screen —
+   faded and struck through, never flown away. */
+.obj.crossed { opacity: .45; filter: grayscale(.55); }
+.obj.crossed::after {
+  content: '';
+  position: absolute;
+  left: 2%; right: 2%; top: 50%;
+  height: 6px; margin-top: -3px;
+  background: var(--red);
+  border-radius: 3px;
+  transform: rotate(-32deg);
+  box-shadow: 0 0 0 2px rgba(255,255,255,.7);
+}
 .obj.static { cursor: default; }
 .obj.static:hover { transform: none; }
 
 @keyframes popIn { from { transform: scale(0); } 70% { transform: scale(1.2); } }
-@keyframes flyAway { to { transform: translateY(-40px) rotate(30deg); opacity: 0; } }
 
 .visual-op { font-size: clamp(2rem, 7vw, 3rem); font-weight: 700; margin: 0 6px; }
 .visual-eq { font-size: clamp(2rem, 7vw, 3rem); font-weight: 700; margin: 0 6px; color: var(--purple); }
@@ -344,7 +355,7 @@ body {
   font-family: inherit;
   font-weight: 700;
   font-size: clamp(2rem, 8vw, 3rem);
-  color: #fff;
+  color: #212529;
   border: none;
   border-radius: 24px;
   min-width: 92px;
@@ -415,7 +426,7 @@ body {
   font-family: inherit;
   font-size: 1.5rem;
   font-weight: 700;
-  color: #fff;
+  color: #212529;
   background: var(--green);
   border: none;
   border-radius: 999px;
@@ -452,7 +463,7 @@ body {
   border-radius: 18px;
   padding: 14px 18px;
   cursor: pointer;
-  color: #fff;
+  color: #212529;
   background: var(--blue);
   box-shadow: 0 4px 0 rgba(0, 0, 0, .15);
   transition: transform .1s ease;
@@ -469,4 +480,18 @@ body {
   .compare-wrap { gap: 10px; }
   .logo { font-size: 1.2rem; }
   .logo-img { width: 32px; height: 32px; border-radius: 8px; }
+}
+
+/* ---------- motion preferences ---------- */
+/* Nothing here may loop for ever: the sky drift, the sun spin and the answer glow
+   all run to infinity, which is a problem for vestibular-sensitive players. */
+@media (prefers-reduced-motion: reduce) {
+  .cloud, .balloon, .sun, .screen, .modal-box, .counter.bump,
+  .obj, .coin, .chart-cell, .opt-btn, .big-btn, .settings-btn,
+  .feedback .fb-emoji, .feedback .fb-word, .reward-trophy,
+  .opt-btn.right, .opt-btn.wrong, .opt-btn.reveal,
+  .compare-panel.correct-panel, .compare-panel.reveal-panel {
+    animation: none !important;
+  }
+  .mode-card:hover, .obj:hover, .obj.counted, .opt-btn:hover, .compare-panel:hover { transform: none; }
 }

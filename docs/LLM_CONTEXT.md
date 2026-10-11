@@ -38,6 +38,14 @@ repository root.
      of a question the correct option gets a green glow (`reveal`) and is described aloud.
    - Question wording must be grammatical with the content tables (use `OBJECTS[].s` for
      singular, `.w` for plural).
+   - **The picture must prove the answer.** Crossed-out subtraction objects stay on screen
+     (faded + red strike line) — never animate them to `opacity: 0`, and never let a `forwards`
+     fill override the declared opacity.
+   - **Text colour on every coloured fill goes through `inkFor(hex)`**, which picks white or
+     near-black by WCAG luminance. Hard-coded white on the option colours measured 1.8:1 on the
+     teal and 1.9:1 on the orange. Keep the worst ratio above 3:1 (`src/tests.html` asserts it).
+   - **`@media (prefers-reduced-motion: reduce)` must disable every looping animation** (sky
+     drift, sun spin, answer glow). Add new infinite animations to that block.
 
 ## Repository layout
 
@@ -45,9 +53,13 @@ repository root.
 /
 ├── index.html          # Redirect shim to src/ (required for GitHub Pages)
 ├── docs/
-│   └── LLM_CONTEXT.md  # This file
+│   ├── LLM_CONTEXT.md  # This file
+│   └── IMPROVEMENT_PLAN.md  # Phased improvement roadmap from the player/dev-review debate
+├── backup/
+│   └── <date>-pre-<phase>/  # Snapshots taken before each roadmap phase
 └── src/
     ├── index.html      # The app shell: topbar, screens, settings modal
+    ├── tests.html      # Self-test harness — audits every generator + the DOM it renders
     ├── css/
     │   └── style.css   # All styles; animated sky background, chunky kid-friendly buttons
     ├── js/
@@ -69,7 +81,9 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
   `localStorage['nl_sound']`. AudioContext is created/resumed on first pointer interaction
   (browser autoplay policy).
 - **`Speech`** — wraps `speechSynthesis`; `say(text)` cancels any current utterance first,
-  picks an English voice, rate 0.95 / pitch 1.15. Gated by `Sound.enabled`.
+  picks an English voice, rate 0.95 / pitch 1.15. Has its **own** `Speech.enabled` switch
+  (`localStorage['nl_voice']`), independent of `Sound`, so muting the effects never silences
+  the questions.
 - **`Confetti`** — full-screen canvas particle shower; `launch(n)`.
 - **`State`** — `{ stars, trophies, mode, level, streak, misses, answered, question, timer }`.
   Stars/trophies persist in `localStorage['nl_stars']` / `['nl_trophies']` via `State.save()`.
@@ -98,7 +112,7 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
 | `q.speak`     | Text spoken aloud — write it for a child, not a reader |
 | `q.answer`    | Correct answer; for `options` compared with `===` to the option value (numbers or strings like `'ODD'`, `'7:30'`) |
 | `q.options`   | Array of option values → rendered as big buttons |
-| `q.objects`   | `{ emoji, total, crossed, split? }` — tappable count-along objects; `crossed` rightmost items render faded (subtraction); `split` inserts a ➕ after N items (addition) |
+| `q.objects`   | `{ emoji, total, crossed, split? }` — tappable count-along objects; `crossed` rightmost items stay visible, faded with a red strike line, and a `= ❓` cue follows a `type: 'sub'` row; `split` inserts a ➕ after N items (addition) |
 | `q.visualText`| Big centered text (equations, sequences) |
 | `q.groups`    | `{ count, size, emoji }` — count boxes of size emoji (multiplication groups) |
 | `q.pairs`     | `{ n, emoji }` — n emoji in boxes of 2, odd leftover highlighted (odd/even) |
@@ -155,8 +169,9 @@ this ladder rather than appending it.
 
 ### Settings modal
 
-Gear button → modal with sound on/off (persisted) and Reset Progress (two-tap confirm;
-zeroes stars/trophies). Reset confirm auto-disarms after 3s and on modal close.
+Gear button → modal with **two independent switches** — `🔔 Sound effects` (`nl_sound`) and
+`🗣️ Voice` (`nl_voice`) — and Reset Progress (two-tap confirm; zeroes stars/trophies only, and
+leaves both sound preferences alone). Reset confirm auto-disarms after 3s and on modal close.
 
 ## How to add a new game mode
 
@@ -170,13 +185,37 @@ zeroes stars/trophies). Reset confirm auto-disarms after 3s and on modal close.
 ## Local development & testing
 
 ```sh
-python3 -m http.server 8765   # from repo root, then open http://localhost:8765/
+cd src && python3 -m http.server 8765   # http://localhost:8765/  (the game)
+                                         # http://localhost:8765/tests.html  (the audits)
 ```
 
-(Opening the root shim redirects to `src/`. Serving directly from `src/` also works.)
+(Opening the root shim redirects to `src/`.)
 
-There is no test suite; verify manually in a browser: each mode renders, correct answers
-score stars, wrong answers are gentle, back button stops speech, console has no errors.
+### src/tests.html
+
+The whole test suite, in the browser, with no dependencies. It sets `window.NL_TEST = true`
+before loading `game.js` — which is why the auto-init at the bottom of that file is guarded by
+`if (!window.NL_TEST)` — then disables `Sound`/`Speech`, reseeds `Math.random` (mulberry32, so a
+failure is reproducible from the seed in the URL bar), and runs every generator × level × N
+questions through two audits:
+
+- **contract** — text and `speak` non-empty, no `NaN`/`undefined` leaking into wording, answer
+  present and unique among the options (duplicate labels mean `revealAnswer` glows two buttons),
+  options integral and in range, pictures consistent with the answer (`count`, `add`, `pie`,
+  `compare`, `clock`, `measure`), and for every arithmetic question the **shown equation is
+  re-evaluated by a small recursive-descent parser and compared to `q.answer`**;
+- **DOM** — `renderQuestion` must not throw, exactly one button may match the answer, option text
+  must clear 3:1 against its fill, and crossed objects must still be visible after all CSS
+  animations finish (`document.getAnimations().forEach(a => a.finish())` — measure only after this,
+  or `popIn`'s `scale(0)` start frame collapses every rect).
+
+Known-but-unfinished defects from `docs/IMPROVEMENT_PLAN.md` are counted separately (amber) rather
+than failed, so the page reads PASS while the roadmap is in progress. Default is 60 questions per
+mode per level ≈ 75,000 checks in ~13s; raise `runs` to widen the sweep. **Run this page after any
+generator change** — there is no other test harness.
+
+Manual checks still needed: correct/incorrect answers score gently, back button stops speech,
+console has no errors.
 
 ## Deployment
 

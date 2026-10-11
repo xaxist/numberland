@@ -33,6 +33,22 @@ const ENCOURAGE = ['Try again!', 'Almost! Have another go!', 'You can do it!'];
 
 const OPTION_COLORS = ['#ff6b6b', '#ffa94d', '#4dabf7', '#9775fa', '#f783ac', '#38d9a9'];
 
+/* White alone measured 1.8:1 on the teal and 1.9:1 on the orange answer buttons,
+   so every coloured fill gets whichever ink reads better against it. */
+function inkFor(hex) {
+  const lum = h => {
+    const n = parseInt(h.slice(1), 16);
+    const chan = shift => {
+      const c = ((n >> shift) & 255) / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * chan(16) + 0.7152 * chan(8) + 0.0722 * chan(0);
+  };
+  const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  const l = lum(hex);
+  return ratio(l, 1) >= ratio(l, lum('#212529')) ? '#fff' : '#212529';
+}
+
 /* ---------- sound effects (Web Audio, no files needed) ---------- */
 const Sound = {
   ctx: null,
@@ -68,6 +84,8 @@ const Sound = {
 /* ---------- speech (reads questions aloud for pre-readers) ---------- */
 const Speech = {
   supported: 'speechSynthesis' in window,
+  // Its own switch: a child who mutes the ding-dong must still hear the questions.
+  enabled: localStorage.getItem('nl_voice') !== 'off',
   voice: null,
   init() {
     if (!this.supported) return;
@@ -82,7 +100,7 @@ const Speech = {
     speechSynthesis.onvoiceschanged = load;
   },
   say(text) {
-    if (!this.supported || !Sound.enabled) return;
+    if (!this.supported || !this.enabled) return;
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     if (this.voice) u.voice = this.voice;
@@ -869,6 +887,7 @@ const Generators = {
       visualText: text.replace('= ?', '= ❓'),
       options: optionSet(answer, [trap, answer - 1, answer + 1, answer - 2, answer + 2, answer + 10].filter(v => v > 0), 4, 1),
       answer,
+      trap,
     };
   },
 };
@@ -905,6 +924,8 @@ function showScreen(id) {
   $('#btn-back').classList.toggle('hidden', id === 'screen-home');
   // The logo and the back button share the top-left slot; on a phone they do not both fit.
   $('#logo').classList.toggle('hidden', id !== 'screen-home');
+  // A card near the bottom of the grid would otherwise leave the question bar off-screen.
+  window.scrollTo(0, 0);
 }
 
 function bump(el) {
@@ -927,6 +948,7 @@ function renderHome() {
     const btn = document.createElement('button');
     btn.className = 'mode-card';
     btn.style.background = `linear-gradient(160deg, ${m.color}, ${m.color}cc)`;
+    btn.style.color = inkFor(m.color);
     btn.innerHTML = `<span class="mode-icon">${m.icon}</span>
                      <span class="mode-name">${m.name}</span>
                      <span class="mode-desc">${m.desc}</span>`;
@@ -1127,6 +1149,7 @@ function renderQuestion(q) {
     if (q.type === 'sub') {
       const eq = document.createElement('span');
       eq.className = 'visual-eq';
+      eq.textContent = '= ❓';
       visual.appendChild(eq);
     }
   }
@@ -1137,6 +1160,7 @@ function renderQuestion(q) {
       btn.className = 'opt-btn';
       btn.dataset.val = sh.w;
       btn.style.background = OPTION_COLORS[i % OPTION_COLORS.length];
+      btn.style.color = inkFor(OPTION_COLORS[i % OPTION_COLORS.length]);
       btn.style.animationDelay = `${i * 0.07}s`;
       btn.innerHTML = `<span class="shape-emoji">${sh.e}</span>`;
       btn.addEventListener('click', () => onAnswer(btn, sh.w === q.answer, q));
@@ -1149,6 +1173,7 @@ function renderQuestion(q) {
       if (typeof num === 'string') btn.classList.add('text');
       btn.dataset.val = String(num);
       btn.style.background = OPTION_COLORS[i % OPTION_COLORS.length];
+      btn.style.color = inkFor(OPTION_COLORS[i % OPTION_COLORS.length]);
       btn.style.animationDelay = `${i * 0.07}s`;
       btn.textContent = num;
       btn.addEventListener('click', () => onAnswer(btn, num === q.answer, q));
@@ -1287,7 +1312,8 @@ let resetArmed = false;
 let resetTimer = null;
 
 function updateSoundBtn() {
-  $('#btn-sound-toggle').textContent = Sound.enabled ? '🔊 Sound: On' : '🔇 Sound: Off';
+  $('#btn-sound-toggle').textContent = Sound.enabled ? '🔔 Sound effects: On' : '🔕 Sound effects: Off';
+  $('#btn-voice-toggle').textContent = Speech.enabled ? '🗣️ Voice: On' : '🤐 Voice: Off';
 }
 
 function disarmReset() {
@@ -1340,8 +1366,14 @@ function init() {
   $('#btn-sound-toggle').addEventListener('click', () => {
     Sound.enabled = !Sound.enabled;
     localStorage.setItem('nl_sound', Sound.enabled ? 'on' : 'off');
-    if (!Sound.enabled) Speech.stop();
-    else { Sound.init(); Sound.pop(); }
+    if (Sound.enabled) { Sound.init(); Sound.pop(); }
+    updateSoundBtn();
+  });
+  $('#btn-voice-toggle').addEventListener('click', () => {
+    Speech.enabled = !Speech.enabled;
+    localStorage.setItem('nl_voice', Speech.enabled ? 'on' : 'off');
+    if (!Speech.enabled) Speech.stop();
+    else { Sound.init(); Speech.say('Now I can read the questions to you!'); }
     updateSoundBtn();
   });
   $('#btn-reset').addEventListener('click', () => {
@@ -1367,4 +1399,5 @@ function init() {
   updateSoundBtn();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+/* tests.html loads this file with NL_TEST set and drives the generators directly. */
+if (!window.NL_TEST) document.addEventListener('DOMContentLoaded', init);

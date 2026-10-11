@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Numberland — self tests</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body { font-family: ui-monospace, Menlo, Consolas, monospace; color: #212529; background: #fff; padding: 20px; }
+  #summary { font-size: 18px; font-weight: 700; margin: 12px 0; }
+  #summary.pass { color: #2b8a3e; } #summary.fail { color: #c92a2a; } #summary.known { color: #b8860b; }
+  #log { white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
+  #controls { margin-bottom: 8px; font-size: 14px; }
+  #controls input { width: 80px; font: inherit; }
+  /* the rendered game DOM the audits measure */
+  #harness { border: 2px dashed #adb5bd; border-radius: 16px; padding: 12px; margin-top: 20px; }
+  #harness .question-text { font-size: 20px; }
+</style>
+</head>
+<body>
+
+<h1>Numberland self tests</h1>
+<div id="controls">
+  seed <input id="seed" value="20261011">
+  questions per mode per level <input id="runs" value="60">
+  <button id="go">Run</button>
+  <span id="elapsed"></span>
+</div>
+<div id="summary">Running…</div>
+<div id="log"></div>
+
+<div id="harness">
+  <div id="level-badge" class="level-badge">Level 1</div>
+  <div id="streak-dots" class="streak-dots"></div>
+  <h2 id="question-text" class="question-text"></h2>
+  <div id="feedback" class="feedback"></div>
+  <div id="visual" class="visual"></div>
+  <div id="options" class="options"></div>
+</div>
+
+<script>window.NL_TEST = true;</script>
+<script src="js/game.js"></script>
+<script>
+/* Audits the pure generators and the DOM they produce. Nothing here mutates progress:
+   init() is skipped (NL_TEST) and audio is off, so no timers, speech or storage writes run. */
+
+const seedRand = a => () => {
+  a |= 0; a = (a + 0x6D2B79F5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+let checks = 0;
+const failures = [];
+const known = { measureOptionIsBoxCount: 0, fractionOffersEquivalentForm: 0, placeValueAmbiguousDigit: 0 };
+
+function ok(cond, msg, q) {
+  checks++;
+  if (!cond) failures.push(msg + (q ? `\n    text: ${q.text}\n    answer: ${String(q.answer)}  options: ${JSON.stringify(q.options)}` : ''));
+}
+
+/* ---------- arithmetic recompute: does the answer match the shown equation? ---------- */
+function parse(src) {
+  const s = src.replace(/\s+/g, '');
+  let i = 0;
+  const expr = () => {
+    let v = term();
+    while (s[i] === '+' || s[i] === '-') { const op = s[i++]; const r = term(); v = op === '+' ? v + r : v - r; }
+    return v;
+  };
+  const term = () => {
+    let v = factor();
+    while (s[i] === '*' || s[i] === '/') { const op = s[i++]; const r = factor(); v = op === '*' ? v * r : v / r; }
+    return v;
+  };
+  const factor = () => {
+    if (s[i] === '(') { i++; const v = expr(); if (s[i] === ')') i++; return v; }
+    const j = i;
+    while (i < s.length && s[i] >= '0' && s[i] <= '9') i++;
+    return parseInt(s.slice(j, i), 10);
+  };
+  const v = expr();
+  return i === s.length ? v : null;
+}
+
+function expected(text) {
+  const t = text.replace(/[−–—]/g, '-').replace(/×/g, '*').replace(/÷/g, '/').trim();
+  let m;
+  if ((m = /^What is double (\d+)\?$/.exec(t))) return 2 * +m[1];
+  if ((m = /^What is half of (\d+)\?$/.exec(t))) return +m[1] / 2;
+  if ((m = /^Is (\d+) odd or even\?$/.exec(t))) return +m[1] % 2 === 1 ? 'ODD' : 'EVEN';
+  if ((m = /^(\d+) - \? = (\d+)$/.exec(t))) return +m[1] - +m[2];
+  if ((m = /^(\d+) \+ \? = (\d+)$/.exec(t))) return +m[2] - +m[1];
+  if ((m = /^([\d\s()+\-*/]+) = \?$/.exec(t))) return parse(m[1]);
+  return null;
+}
+
+/* ---------- contrast ---------- */
+const rgb = c => (c.match(/\d+/g) || []).slice(0, 3).map(Number);
+const lum = ([r, g, b]) => {
+  const f = v => (v /= 255) <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+};
+const ratio = (a, b) => {
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+};
+let worstContrast = 99;
+
+/* ---------- contract audit ---------- */
+function audit(id, level, q) {
+  const at = `${id} L${level}`;
+  ok(typeof q.text === 'string' && q.text.length > 0, `${at}: empty text`, q);
+  // every question must be speakable: the audience cannot read yet
+  ok(typeof q.speak === 'string' && q.speak.length > 0, `${at}: empty speak`, q);
+  ok(!/NaN|undefined/.test(q.text + q.speak), `${at}: NaN or undefined shown`, q);
+  ok(q.answer !== undefined && q.answer !== null, `${at}: no answer`, q);
+
+  if (q.options) {
+    ok(Array.isArray(q.options) && q.options.length >= 2, `${at}: fewer than 2 options`, q);
+    const labels = q.options.map(String);
+    ok(new Set(labels).size === labels.length, `${at}: duplicate option labels (two buttons glow)`, q);
+    ok(labels.includes(String(q.answer)), `${at}: answer is not among the options`, q);
+    q.options.forEach(v => {
+      if (typeof v === 'number') ok(Number.isInteger(v) && v >= 0 && v < 100000, `${at}: bad numeric option ${v}`, q);
+    });
+  }
+  if (q.type === 'shapes') {
+    ok(q.shapeOptions.some(s => s.w === q.answer), `${at}: shape answer missing`, q);
+  }
+  if (q.compare) {
+    ok(q.compare.left !== q.compare.right, `${at}: both sides equal — no answer`, q);
+    ok(['left', 'right'].includes(q.answer), `${at}: compare answer is not a side`, q);
+  }
+  if (q.objects) {
+    ok(q.objects.total >= 0, `${at}: negative object count`, q);
+    ok(q.objects.crossed <= q.objects.total, `${at}: more crossed than shown`, q);
+    if (q.objects.split !== undefined) ok(q.answer === q.objects.total, `${at}: picture total ≠ answer`, q);
+    if (q.type === 'count') ok(q.answer === q.objects.total, `${at}: answer ≠ the objects on screen`, q);
+  }
+  if (q.pie) {
+    ok(q.pie.parts >= 2 && q.pie.shaded >= 1 && q.pie.shaded < q.pie.parts, `${at}: impossible pie`, q);
+    ok(q.answer === `${q.pie.shaded}/${q.pie.parts}`, `${at}: answer ≠ picture`, q);
+  }
+  if (q.clock) ok(q.clock.hour >= 1 && q.clock.hour <= 12 && q.clock.minute >= 0 && q.clock.minute < 60, `${at}: impossible clock`, q);
+  if (q.measure) {
+    ok(q.measure.items.every(it => it.len >= 1 && it.len <= q.measure.cells), `${at}: length outside the grid`, q);
+    // Phase 2: the grid width must not be offered as the answer
+    if (q.options.some(v => v === q.measure.cells)) known.measureOptionIsBoxCount++;
+  }
+  if (q.pie) {
+    const [n, d] = String(q.answer).split('/').map(Number);
+    if (q.options.some(v => typeof v === 'string' && v !== q.answer && v.includes('/') &&
+        (p => p.length === 2 && p[0] * d === p[1] * n)(v.split('/').map(Number)))) {
+      known.fractionOffersEquivalentForm++;
+    }
+  }
+  if (id === 'placevalue' && /\bvalue of the\b/.test(q.text)) {
+    const digits = (q.visualText || '').match(/\d/g) || [];
+    const asked = (q.text.match(/the (\d)/) || [])[1];
+    if (asked && digits.filter(x => x === asked).length > 1) known.placeValueAmbiguousDigit++;
+  }
+
+  const want = expected(q.text);
+  if (want !== null && want !== undefined) ok(String(q.answer) === String(want), `${at}: answer does not match the shown equation (expected ${want})`, q);
+  if (id === 'mixed') ok(q.trap !== q.answer, `${at}: the trap equals the answer`, q);
+}
+
+/* ---------- DOM audit ---------- */
+function domAudit(id, level, q) {
+  State.mode = id; State.level = level; State.streak = 0; State.answered = false; State.misses = 0;
+  $('#feedback').innerHTML = '';
+  try { renderQuestion(q); } catch (e) { failures.push(`${id} L${level}: renderQuestion threw ${e.message}`); return; }
+
+  const btns = [...document.querySelectorAll('#options .opt-btn')];
+  if (q.options) {
+    checks++;
+    if (btns.length !== q.options.length) failures.push(`${id} L${level}: rendered ${btns.length} of ${q.options.length} options`);
+    const hits = btns.filter(b => b.dataset.val === String(q.answer));
+    ok(hits.length === 1, `${id} L${level}: ${hits.length} buttons match the answer`, q);
+    btns.forEach(b => {
+      const cs = getComputedStyle(b);
+      const bg = rgb(cs.backgroundColor);
+      if (!bg.length || bg.length < 3) return;
+      if (cs.backgroundColor === 'rgba(0, 0, 0, 0)') return;
+      const r = ratio(rgb(cs.color), bg);
+      worstContrast = Math.min(worstContrast, r);
+      ok(r >= 3, `${id} L${level}: option contrast ${r.toFixed(2)}:1`, q);
+    });
+  }
+
+  if (q.objects && q.objects.crossed > 0) {
+    document.getAnimations().forEach(a => { try { a.finish(); } catch (e) {} });
+    const xs = [...document.querySelectorAll('#visual .obj.crossed')];
+    ok(xs.length === q.objects.crossed, `${id} L${level}: ${xs.length} crossed objects, expected ${q.objects.crossed}`, q);
+    ok(xs.every(o => parseFloat(getComputedStyle(o).opacity) > 0.2), `${id} L${level}: crossed objects faded away`, q);
+    ok(document.querySelectorAll('#visual .visual-eq').length === 1, `${id} L${level}: subtraction picture has no "=" cue`, q);
+  }
+}
+
+function run() {
+  const t0 = performance.now();
+  checks = 0; failures.length = 0; worstContrast = 99;
+  Object.keys(known).forEach(k => known[k] = 0);
+
+  Math.random = seedRand(+$('#seed').value || 1);
+  Sound.enabled = false; Speech.enabled = false;
+  const runs = Math.max(1, +$('#runs').value || 1);
+
+  for (const m of MODES) {
+    for (let level = 1; level <= 4; level++) {
+      for (let i = 0; i < runs; i++) {
+        let q;
+        try { q = Generators[m.id](level); } catch (e) { failures.push(`${m.id} L${level}: generator threw ${e.message}`); continue; }
+        audit(m.id, level, q);
+        domAudit(m.id, level, q);
+      }
+    }
+  }
+
+  const knownTotal = Object.values(known).reduce((a, b) => a + b, 0);
+  const s = $('#summary');
+  const questions = MODES.length * 4 * runs;
+  if (failures.length) { s.className = 'fail'; s.textContent = `${failures.length} FAILURES of ${checks} checks over ${questions} questions`; }
+  else if (knownTotal) { s.className = 'known'; s.textContent = `PASS — ${checks} checks over ${questions} questions, ${knownTotal} known Phase-2 defects still outstanding`; }
+  else { s.className = 'pass'; s.textContent = `PASS — ${checks} checks over ${questions} questions`; }
+
+  $('#elapsed').textContent = ` ${Math.round(performance.now() - t0)}ms, seed ${$('#seed').value}`;
+  $('#log').textContent =
+    `worst option contrast: ${worstContrast === 99 ? 'n/a' : worstContrast.toFixed(2) + ':1'} (floor 3:1)\n` +
+    `known outstanding: measure box-count options ${known.measureOptionIsBoxCount}, ` +
+    `fraction equivalent forms ${known.fractionOffersEquivalentForm}, ` +
+    `ambiguous place-value digits ${known.placeValueAmbiguousDigit}\n\n` +
+    (failures.length ? failures.slice(0, 40).join('\n\n') : '');
+}
+
+$('#go').addEventListener('click', run);
+run();
+</script>
+</body>
+</html>
