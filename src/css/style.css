@@ -270,7 +270,7 @@ body {
 .question-text { flex: 1; margin: 0; font-size: clamp(1.3rem, 4.5vw, 1.9rem); font-weight: 600; }
 
 .visual {
-  margin: 18px auto 6px;
+  margin: 0 auto 6px;
   min-height: 90px;
   display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
   gap: 8px;
@@ -378,7 +378,9 @@ body {
 .feedback {
   display: flex; align-items: center; justify-content: center; gap: 12px;
   min-height: 74px;
-  margin-top: 2px;
+  /* asymmetric so the text lands in the middle of the gap the child sees:
+     the question bar above, the (vertically centered) visual content below. */
+  margin: 13px 0 5px;
   pointer-events: none;
 }
 .feedback .fb-emoji { font-size: 3rem; line-height: 1; animation: fbBounce .8s ease; filter: drop-shadow(0 4px 6px rgba(0,0,0,.2)); }
