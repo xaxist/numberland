@@ -452,22 +452,28 @@ function onCompare(panel, side, q) {
 
 function handleCorrect() {
   Sound.correct();
-  Confetti.launch(60);
 
   State.stars++;
   State.streak++;
   State.save();
   updateStarUI(true);
 
-  const praise = pick(PRAISES);
-  const fb = $('#feedback');
-  fb.innerHTML = `<div class="fb-emoji">${pick(PRAISE_EMOJI)}</div><div class="fb-word">${praise}</div>`;
-  fb.classList.remove('hidden');
-  Speech.say(praise);
-
-  if (State.streak >= 3 && State.level < 4) {
+  const leveledUp = State.streak >= 3 && State.level < 4;
+  if (leveledUp) {
     State.level++;
     State.streak = 0;
+  }
+
+  const fb = $('#feedback');
+  fb.innerHTML = `<div class="fb-emoji">${leveledUp ? '🏅' : pick(PRAISE_EMOJI)}</div><div class="fb-word">${leveledUp ? 'Level up!' : pick(PRAISES)}</div>`;
+  fb.classList.remove('hidden');
+
+  if (leveledUp) {
+    Confetti.launch(150);
+    Sound.fanfare();
+    Speech.say(`Level up! Welcome to level ${State.level}!`);
+  } else {
+    Speech.say(pick(PRAISES));
   }
 
   const milestone = State.stars % 10 === 0;
