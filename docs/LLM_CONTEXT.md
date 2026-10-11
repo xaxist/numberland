@@ -140,7 +140,7 @@ Everything is plain script (no modules) with these subsystems, top to bottom:
 | `q.answer`    | Correct answer; for `options` compared with `===` to the option value (numbers or strings like `'ODD'`, `'7:30'`) |
 | `q.options`   | Array of option values → rendered as big buttons |
 | `q.objects`   | `{ emoji, total, crossed, split? }` — tappable count-along objects; `crossed` rightmost items stay visible, faded with a red strike line, and a `= ❓` cue follows a `type: 'sub'` row; `split` inserts a ➕ after N items (addition) |
-| `q.visualText`| Big centered text (equations, sequences). With `q.mark: <index>` the character at that index is highlighted (`.digit-mark`) — place value needs it so "the value of the 7" points at one visible digit |
+| `q.visualText`| Big centered text (equations, sequences). With `q.mark: <index>` the character at that index is highlighted (`.digit-mark`) — place value uses it so "the value of the 7" points at one visible digit, odd/even uses it to point at the units digit that decides parity |
 | `q.groups`    | `{ count, size, emoji }` — count boxes of size emoji (multiplication groups) |
 | `q.pairs`     | `{ n, emoji }` — n emoji in boxes of 2, odd leftover highlighted (odd/even) |
 | `q.clock`     | `{ hour, minute }` — renders analog SVG clock |
@@ -160,19 +160,19 @@ this ladder rather than appending it.
 | # | id | Concept | Ages | Level 4 ceiling |
 |---|----|---------|------|-----------------|
 | 1 | `count` | Counting objects | 3–5 | up to 20 objects |
-| 2 | `find` | Recognise a spoken number | 3–6 | numbers to 999 |
+| 2 | `find` | Recognise a spoken number (at level 4 the neighbours differ by tens and hundreds, so a digit column has to be read) | 3–6 | numbers to 999 |
 | 3 | `compare` | More / fewer | 3–6 | up to 20 per side |
 | 4 | `shapes` | Shape names | 4–6 | 6 shapes on screen |
 | 5 | `add` | Addition with tappable groups | 4–9 | 3-digit + 3-digit |
 | 6 | `sub` | Subtraction with crossing-out | 4–9 | 3-digit − 3-digit |
 | 7 | `measure` | Non-standard measurement | 5–8 | compare two lengths, to 20 cubes |
-| 8 | `data` | Picture graphs: most/fewest/how many/how many more | 5–9 | 4 categories, up to 10 |
+| 8 | `data` | Picture graphs: most/fewest/how many/how many more — no counts printed, the bars must be read | 5–9 | 4 categories, up to 10 |
 | 9 | `money` | Adding coin values | 5–9 | values to 50, 6 coins |
 | 10 | `doublehalf` | Doubling and halving | 5–8 | double 2-digit to 49, half of 2-digit to 98 |
 | 11 | `missing` | Missing number / fact families | 6–9 | 3-digit equations |
-| 12 | `oddeven` | Odd/even by pairing | 6–9 | numbers to 999 |
+| 12 | `oddeven` | Odd/even — pairing picture to 16, then the units-digit rule (that digit is highlighted) | 6–9 | numbers to 999 |
 | 13 | `multiply` | Times tables, grouped objects | 6–10 | 11–19 × 3–9, tables to 12 |
-| 14 | `patterns` | Number sequences (+ rules, doubling) | 6–10 | step up to 10 and doubling from 5 |
+| 14 | `patterns` | Number sequences (+ rules, doubling) — asks what comes next **or** what comes first | 6–10 | step up to 10 and doubling from 5 |
 | 15 | `divide` | Sharing into equal groups | 7–9 | tables to 9, grouping shown |
 | 16 | `clock` | Reading an analog clock | 7–10 | minutes in 5s |
 | 17 | `placevalue` | Tens, hundreds, digit values | 7–10 | thousands + "value of the digit" |
@@ -238,7 +238,10 @@ audits at the end:
 - **contract** — text and `speak` non-empty, no `NaN`/`undefined` leaking into wording, answer
   present and unique among the options (duplicate labels mean `revealAnswer` glows two buttons),
   options integral and in range, pictures consistent with the answer (`count`, `add`, `pie`,
-  `compare`, `clock`, `measure`), and for every arithmetic question the **shown equation is
+  `compare`, `clock`, `measure`), wording never says "0 hundreds" or prints a `+ 0` term, a picture
+  graph prints no digits in its question, odd/even above the pairing picture marks the units digit,
+  `find` at level 4 keeps its neighbours a readable distance apart, sequences ask in both directions
+  and the answer obeys the rule — and for every arithmetic question the **shown equation is
   re-evaluated by a small recursive-descent parser and compared to `q.answer`**;
 - **DOM** — `renderQuestion` must not throw, exactly one button may match the answer, option text
   must clear 3:1 against its fill, crossed objects must still be visible after all CSS animations
@@ -257,13 +260,16 @@ audits at the end:
   carries the same ids as `index.html`, so `startMode`/`goBack`/`showScreen` work here): corrupt and
   out-of-range `nl_progress` values fall back safely, a remembered level resumes on the badge, the
   crown fires once per game and never twice, a tap inside the dwell window cannot skip the
-  celebration, and Reset clears the record.
+  celebration, and Reset clears the record;
+- **assets** — fetches `index.html` and this page and checks both pin `js/game.js` and
+  `css/style.css` with a `?v=` version, and that the two files name the *same* build, so a release
+  cannot leave one page on the old engine.
 
 Some assertions are geometric, and a browser surface that reports `innerWidth === 0` (the embedded
 in-app browser does) cannot answer them — those count themselves as **skipped** and the summary says
 how many, so a green page never claims to have tested fit. Run the page in a normal window for the
 layout checks. Run the page in a normal window for the
-layout checks. Default is 60 questions per mode per level ≈ 77,200 checks in ~14s; raise `runs` to
+layout checks. Default is 60 questions per mode per level ≈ 89,000 checks in ~42s; raise `runs` to
 widen the sweep. **Run this page after any generator change** — there is no other test harness.
 
 Manual checks still needed: correct/incorrect answers score gently, back button stops speech,
@@ -274,10 +280,11 @@ console has no errors.
 Push to `main`. GitHub Pages (repo Settings → Pages → deploy from branch `main`, `/root`)
 rebuilds in ~1 minute. Commit + push is the expected end of every change.
 
-**Cached assets:** `index.html` references `js/game.js` and `css/style.css` with no version query,
-so a browser (or Pages' own edge cache) can keep running the previous engine for a while after a
-deploy. When verifying a deploy, fetch the asset with `cache: 'reload'` (or hard-reload) before
-concluding a change did not land — this has bitten the development loop.
+**Cached assets are versioned by hand:** `index.html` and `tests.html` load
+`js/game.js?v=<date>` and `css/style.css?v=<date>`. **Bump both values in both files with every
+release that changes them** — without it a phone can keep running the previous engine after a push,
+which has already made a correct deploy look broken (and the tests page asserts the two files are
+pinned to the same build, so a half-bump is caught).
 
 ## Git history highlights
 

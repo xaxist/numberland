@@ -231,11 +231,6 @@ body {
 .chart-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .chart-bar { display: flex; flex-direction: column-reverse; gap: 1px; min-height: 20px; }
 .chart-cell { font-size: clamp(1.1rem, 4vw, 1.7rem); line-height: 1.1; animation: popIn .3s ease backwards; }
-.chart-label {
-  font-weight: 700; font-size: 1.05rem;
-  background: #fff; border-radius: 999px; padding: 1px 10px;
-  box-shadow: 0 2px 0 rgba(0, 0, 0, .12);
-}
 
 /* ---------- mode cards ---------- */
 .mode-grid {

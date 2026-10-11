@@ -45,7 +45,7 @@ const REDIRECT = {
   money: 'Add the biggest coin first, then count on.',
   doublehalf: 'Double means two lots of the same number. Half means sharing between two.',
   missing: 'Which number fits in the gap? Count on from the numbers you can see.',
-  oddeven: 'Pair them up. If one is left over, it is odd.',
+  oddeven: 'Pair them up — if one is left over it is odd. The last digit tells you.',
   multiply: 'Count the boxes, then count how many are in each box.',
   patterns: 'What is the rule? Count on from the last number.',
   divide: 'Share them out one at a time to each friend.',
@@ -346,6 +346,19 @@ function placeLabel(v, unit) {
   return `${v} ${v === 1 ? unit : unit + 's'}`;
 }
 
+/* A place with nothing in it is dropped: "0 hundreds" is not a quantity a child can picture,
+   and writing it into the equation makes the equation misdescribe the number. */
+function placeParts(places) {
+  const kept = places.filter(p => p.n > 0);
+  const words = kept.map(p => placeLabel(p.n, p.unit));
+  const spoken = words.length < 2 ? words[0] : words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1];
+  return {
+    text: `${words.join(' + ')} = ?`,
+    speak: `What is ${spoken}?`,
+    visual: `${kept.map(p => p.value).join(' + ')} = ❓`,
+  };
+}
+
 function fmtTime(hour, minute) {  return `${hour}:${String(minute).padStart(2, '0')}`;
 }
 
@@ -449,12 +462,17 @@ const Generators = {
   find(level) {
     const max = level === 1 ? 5 : level === 2 ? 10 : level === 3 ? 100 : 999;
     const target = rand(1, max);
+    // 743 next to 746 is a squinting exercise, not digit reading. At the top level the
+    // neighbours differ by tens and hundreds, so the child has to read which column changed.
+    const options = level >= 3
+      ? nearOptions(target, 4, level === 3 ? [-10, -2, 2, 10, -1, 1] : [-100, -10, 10, 100], 1)
+      : numberOptions(target, 4, 1, Math.max(9, max));
     return {
       type: 'options',
       text: `Tap the number ${target}!`,
       speak: `Tap the number ${target}!`,
       objects: null,
-      options: numberOptions(target, 4, 1, Math.max(9, max)),
+      options,
       answer: target,
     };
   },
@@ -645,24 +663,32 @@ const Generators = {
     const steps = level === 1 ? [1, 2] : level === 2 ? [2, 5, 10] : [2, 3, 4, 5, 10];
     const shown = level === 1 ? 3 : 4;
     const doubling = level >= 3 && Math.random() < 0.3;
-    let seq, answer;
+    let seq, delta;
     if (doubling) {
       const s0 = pick([2, 3, 5]);
       seq = [s0, s0 * 2, s0 * 4, s0 * 8];
-      answer = s0 * 16;
     } else {
       const step = pick(steps);
       const down = level >= 3 && Math.random() < 0.4;
       const start = down ? rand(step * shown + 1, step * shown + 10) : rand(1, 10);
+      delta = down ? -step : step;
       seq = [];
-      for (let i = 0; i < shown; i++) seq.push(start + (down ? -step : step) * i);
-      answer = start + (down ? -step : step) * shown;
+      for (let i = 0; i < shown; i++) seq.push(start + delta * i);
     }
+    const last = seq[seq.length - 1];
+    const next = doubling ? last * 2 : last + delta;
+    const before = doubling ? null : seq[0] - delta;
+    // A rule can be run backwards as well as forwards; asking only "what comes next" trains
+    // one shape of it and leaves the child guessing where the arrow should point.
+    const askBefore = before !== null && before >= 0 && level >= 2 && Math.random() < 0.3;
+    const answer = askBefore ? before : next;
     return {
       type: 'options',
-      text: 'What comes next?',
-      speak: `What comes next? ${seq.join(', ')}, what?`,
-      visualText: seq.join(' → ') + ' → ❓',
+      text: askBefore ? 'Which number comes first?' : 'What comes next?',
+      speak: askBefore
+        ? `Which number comes just before ${seq[0]} in this pattern?`
+        : `What comes next? ${seq.join(', ')}, what?`,
+      visualText: (askBefore ? '❓ → ' : '') + seq.join(' → ') + (askBefore ? '' : ' → ❓'),
       options: optionSet(answer, [answer - 1, answer + 1, answer - 10, answer + 10, seq[seq.length - 1] * 2, answer * 2], level === 1 ? 3 : 4, 0),
       answer,
     };
@@ -678,8 +704,15 @@ const Generators = {
       options: shuffle(['ODD', 'EVEN']),
       answer: n % 2 === 1 ? 'ODD' : 'EVEN',
     };
-    if (n <= 16) q.pairs = { n, emoji: pick(OBJECTS).e };
-    else q.visualText = String(n);
+    if (n <= 16) {
+      q.pairs = { n, emoji: pick(OBJECTS).e };
+    } else {
+      // Past the pairing picture the only thing that decides parity is the units digit,
+      // so the picture points straight at it.
+      q.visualText = String(n);
+      q.mark = String(n).length - 1;
+      q.speak = `Is ${n} odd or even? Look at the last digit.`;
+    }
     return q;
   },
 
@@ -721,11 +754,17 @@ const Generators = {
       if (Math.random() < 0.5) {
         const th = rand(1, 6), h = rand(0, 9), t = rand(0, 9), o = rand(1, 9);
         const made = th * 1000 + h * 100 + t * 10 + o;
+        const parts = placeParts([
+          { n: th, unit: 'thousand', value: th * 1000 },
+          { n: h, unit: 'hundred', value: h * 100 },
+          { n: t, unit: 'ten', value: t * 10 },
+          { n: o, unit: 'one', value: o },
+        ]);
         return {
           type: 'options',
-          text: `${placeLabel(th, 'thousand')} + ${placeLabel(h, 'hundred')} + ${placeLabel(t, 'ten')} + ${placeLabel(o, 'one')} = ?`,
-          speak: `What is ${placeLabel(th, 'thousand')}, ${placeLabel(h, 'hundred')}, ${placeLabel(t, 'ten')} and ${placeLabel(o, 'one')}?`,
-          visualText: `${th * 1000} + ${h * 100} + ${t * 10} + ${o} = ❓`,
+          text: parts.text,
+          speak: parts.speak,
+          visualText: parts.visual,
           options: nearOptions(made, 4, [-1000, -100, -10, 10, 100, 1000, -1, 1], 1),
           answer: made,
         };
@@ -755,11 +794,16 @@ const Generators = {
     if (type === 'make3') {
       const h = rand(1, 5), t = rand(0, 9), o = rand(0, 9);
       const n = h * 100 + t * 10 + o;
+      const parts = placeParts([
+        { n: h, unit: 'hundred', value: h * 100 },
+        { n: t, unit: 'ten', value: t * 10 },
+        { n: o, unit: 'one', value: o },
+      ]);
       return {
         type: 'options',
-        text: `${placeLabel(h, 'hundred')} + ${placeLabel(t, 'ten')} + ${placeLabel(o, 'one')} = ?`,
-        speak: `What is ${placeLabel(h, 'hundred')}, ${placeLabel(t, 'ten')} and ${placeLabel(o, 'one')}?`,
-        visualText: `${h * 100} + ${t * 10} + ${o} = ❓`,
+        text: parts.text,
+        speak: parts.speak,
+        visualText: parts.visual,
         options: pvOptions(n),
         answer: n,
       };
@@ -1023,7 +1067,7 @@ const MODES = [
   { id: 'data',       name: 'My Graph',     desc: 'Read the picture graph',  icon: '📊', color: '#12b886' },
   { id: 'money',      name: 'Treasure',     desc: 'Count the coins',         icon: '🪙', color: '#fab005' },
   { id: 'doublehalf', name: 'Double or Half', desc: 'Twice as many',           icon: '🌗', color: '#0c8599' },
-  { id: 'missing',    name: 'Missing No.',  desc: 'Solve the gap',           icon: '❓', color: '#20c997' },
+  { id: 'missing',    name: 'Missing No.',  desc: 'Solve the gap',           icon: '🧩', color: '#20c997' },
   { id: 'oddeven',    name: 'Odd or Even',  desc: 'Pair them up',            icon: '👯', color: '#d6336c' },
   { id: 'multiply',   name: 'Multiply',     desc: 'Times tables fun',        icon: '✖️', color: '#f03e3e' },
   { id: 'patterns',   name: 'Patterns',     desc: 'What comes next?',        icon: '🧩', color: '#4263eb' },
@@ -1216,11 +1260,9 @@ function renderQuestion(q) {
         cell.textContent = k.e;
         bar.appendChild(cell);
       }
-      const label = document.createElement('span');
-      label.className = 'chart-label';
-      label.textContent = k.n;
+      // No number printed under the column: a graph with the answers written on it
+      // is not a graph to read. The column's own emoji says which category it is.
       col.appendChild(bar);
-      col.appendChild(label);
       wrap.appendChild(col);
     }
     visual.appendChild(wrap);

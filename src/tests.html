@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Numberland — self tests</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=2026-10-12">
 <style>
   body { font-family: ui-monospace, Menlo, Consolas, monospace; color: #212529; background: #fff; padding: 20px; }
   #summary { font-size: 18px; font-weight: 700; margin: 12px 0; }
@@ -53,7 +53,7 @@
 </div>
 
 <script>window.NL_TEST = true;</script>
-<script src="js/game.js"></script>
+<script src="js/game.js?v=2026-10-12"></script>
 <script>
 /* Audits the pure generators and the DOM they produce. Nothing here mutates progress:
    init() is skipped (NL_TEST) and audio is off, so no timers, speech or storage writes run. */
@@ -177,6 +177,28 @@ function audit(id, level, q) {
       `${at}: the digit ${asked} appears twice — the question has more than one right answer`, q);
     ok(q.visualText[q.mark] === asked, `${at}: the marked digit is not the one asked about`, q);
   }
+  // "0 hundreds" is not a quantity, and an equation that adds zero misdescribes the number
+  ok(!/\b0 (hundreds?|tens?|ones?|thousands?)\b/.test(q.text + ' ' + q.speak),
+    `${at}: a zero place is spoken as a quantity`, q);
+  ok(!/\+ 0 \+|^0 \+|\+ 0 =/.test(q.visualText || ''), `${at}: a zero term is printed in the equation`, q);
+  // above the pairing picture the units digit is the whole answer, so it must be pointed at
+  if (id === 'oddeven' && !q.pairs) {
+    ok(q.mark === q.visualText.length - 1, `${at}: the deciding last digit is not highlighted`, q);
+  }
+  // at the top level a one-digit gap stops teaching digit reading — but only once the number is
+  // big enough to squint at. Near 6, a neighbour of 7 is the right kind of hard.
+  if (id === 'find' && level === 4 && q.answer >= 100) {
+    const near = q.options.filter(v => v !== q.answer).map(v => Math.abs(v - q.answer));
+    ok(Math.min(...near) >= 10, `${at}: neighbour only ${Math.min(...near)} away from ${q.answer}`, q);
+  }
+  if (id === 'patterns') {
+    ok(q.answer >= 0, `${at}: the sequence runs below zero`, q);
+    if (q.text.includes('comes first')) {
+      ok(q.visualText.startsWith('❓ → '), `${at}: asked for the first number but the gap is at the end`, q);
+      const shown = q.visualText.match(/\d+/g).map(Number);
+      ok(q.answer === 2 * shown[0] - shown[1], `${at}: the "before" answer breaks the rule of the sequence`, q);
+    }
+  }
 
   const want = expected(q.text);
   if (want !== null && want !== undefined) ok(String(q.answer) === String(want), `${at}: answer does not match the shown equation (expected ${want})`, q);
@@ -254,6 +276,17 @@ function domAudit(id, level, q) {
       ok(Math.abs(widths[0] - widths[1]) < 2, `${id} L${level}: panels are unequal width, so "more" is not comparable`, q);
     } else layoutSkipped++;
   }
+
+  // a picture graph with its answers printed underneath is not a graph to read
+  if (q.chart) {
+    ok(!document.querySelector('#visual .chart-label'), `${id} L${level}: the counts are written under the bars`, q);
+    const cols = [...document.querySelectorAll('#visual .chart-col')];
+    ok(cols.length === q.chart.length, `${id} L${level}: ${cols.length} columns for ${q.chart.length} categories`, q);
+    cols.forEach((c, i) => {
+      const cells = c.querySelectorAll('.chart-cell').length;
+      ok(cells === q.chart[i].n, `${id} L${level}: column ${i} draws ${cells} pictures but says ${q.chart[i].n}`, q);
+    });
+  }
 }
 
 /* ---------- speech queue (fake speechSynthesis, no audio) ---------- */
@@ -323,6 +356,12 @@ function logicAudit() {
   }
 
   MODES.forEach(m => ok(typeof REDIRECT[m.id] === 'string' && REDIRECT[m.id].length > 8, `REDIRECT: no hint for ${m.id}`));
+  ok(MODES.every(m => m.icon !== '❓'), 'MODES: a card icon is the same glyph as the gap in the question');
+
+  const pp = placeParts([{ n: 3, unit: 'hundred', value: 300 }, { n: 0, unit: 'ten', value: 0 }, { n: 1, unit: 'one', value: 1 }]);
+  ok(pp.text === '3 hundreds + 1 one = ?', `placeParts: zero place not dropped (${pp.text})`);
+  ok(pp.speak === 'What is 3 hundreds and 1 one?', `placeParts: wording (${pp.speak})`);
+  ok(pp.visual === '300 + 1 = ❓', `placeParts: equation (${pp.visual})`);
 
   // the Phase 2 acceptance test: a child who taps 1/2 under a 6/12 pizza must be celebrated
   const saved = { stars: State.stars, trophies: State.trophies, mode: State.mode, level: State.level, launch: Confetti.launch };
@@ -408,9 +447,28 @@ function progressAudit() {
   stopClock();
 }
 
-function run() {
+/* ---------- deploy safety: the shell must not be able to serve a stale engine ---------- */
+let assetsSkipped = false;
+
+async function assetAudit() {
+  const versioned = s => {
+    const js = s.match(/js\/game\.js\?v=([\w.-]+)/), css = s.match(/css\/style\.css\?v=([\w.-]+)/);
+    return js && css ? `${js[1]}|${css[1]}` : null;
+  };
+  let shell, here;
+  try {
+    shell = await (await fetch('index.html', { cache: 'reload' })).text();
+    here = await (await fetch(location.href.split('?')[0], { cache: 'reload' })).text();
+  } catch (e) { assetsSkipped = true; return; }
+  const a = versioned(shell), b = versioned(here);
+  ok(a !== null, 'assets: index.html loads game.js/style.css with no ?v= version, so a push can leave a phone on the old engine');
+  ok(b !== null, 'assets: tests.html loads its assets with no ?v= version');
+  ok(a === b, `assets: the game and the test page are pinned to different builds (${a} vs ${b})`);
+}
+
+async function run() {
   const t0 = performance.now();
-  checks = 0; failures.length = 0; worstContrast = 99; layoutSkipped = 0;
+  checks = 0; failures.length = 0; worstContrast = 99; layoutSkipped = 0; assetsSkipped = false;
 
   Math.random = seedRand(+$('#seed').value || 1);
   Sound.enabled = false; Speech.enabled = false;
@@ -430,12 +488,16 @@ function run() {
   speechAudit();
   logicAudit();
   progressAudit();
+  await assetAudit();
 
   const s = $('#summary');
   const questions = MODES.length * 4 * runs;
-  const skipped = layoutSkipped ? ` (${layoutSkipped} layout checks skipped: viewport is ${window.innerWidth}px wide)` : '';
+  const skips = [
+    layoutSkipped ? `${layoutSkipped} layout checks skipped (viewport ${window.innerWidth}px wide)` : '',
+    assetsSkipped ? 'asset-version checks skipped (serve the pages over http)' : '',
+  ].filter(Boolean).join('; ');
   if (failures.length) { s.className = 'fail'; s.textContent = `${failures.length} FAILURES of ${checks} checks over ${questions} questions`; }
-  else { s.className = 'pass'; s.textContent = `PASS — ${checks} checks over ${questions} questions${skipped}`; }
+  else { s.className = 'pass'; s.textContent = `PASS — ${checks} checks over ${questions} questions${skips ? ` (${skips})` : ''}`; }
 
   $('#elapsed').textContent = ` ${Math.round(performance.now() - t0)}ms, seed ${$('#seed').value}`;
   const groups = new Map();

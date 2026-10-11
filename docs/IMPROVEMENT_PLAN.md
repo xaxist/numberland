@@ -195,6 +195,37 @@ quitting; Reset Progress clears both keys.
 
 ---
 
+### Phase 4 — the polish list *(the §1 Low items, plus deploy safety)*
+
+> **Status: done 2026-10-12.** Pre-change snapshot in `backup/2026-10-12-pre-phase4/`.
+> Not in the original phase plan — it is the residue the debate ranked below everything above,
+> shipped after the owner asked for it.
+>
+> - **Picture graphs must be read.** `data` printed the count under every column, so "how many more
+>   flowers than balloons?" was a subtraction of two displayed numbers rather than a graph to read.
+>   The labels are gone; the columns' own emoji still says which category is which.
+> - **Odd/even points at the digit that decides.** Above the pairing picture (16) the game showed a
+>   bare number and asked for parity; the units digit is now highlighted with the same channel place
+>   value uses, and the question says so aloud.
+> - **`find` at the top level stops being a squinting test.** Neighbours are now tens and hundreds
+>   away once the answer is three digits, so a child has to read which column changed. Below 100 the
+>   close neighbours stay — near `6`, a `7` is the right kind of hard.
+> - **Sequences ask in both directions.** "What comes next?" was the only question the game ever
+>   asked about a rule; about a third of level-2+ sequences now ask which number comes first, with
+>   the gap moved to the left end.
+> - **"0 hundreds" is gone.** Zero places are dropped from the text, the speech and the equation, so
+>   `305` reads "3 hundreds + 5 ones" instead of adding a term that pictures nothing.
+> - **The `❓` collision is resolved:** the Missing No. card is now 🧩, leaving `❓` as only the gap
+>   inside a question.
+> - **Deploy safety:** both pages load `js/game.js?v=…` and `css/style.css?v=…`, and the harness
+>   checks that they name the same build. A stale cached engine cost this session a false "the crown
+>   is broken" report.
+>
+> Caught by the harness while it was being written: the first version of the sequences change read a
+> fourth term that does not exist at level 1 (`shown` is 3 there), producing `NaN` and spinning
+> forever inside the option builder — the tab froze rather than erroring, which is how a real child
+> would experience it. Fixed, and the invariants are now asserted: **88,969 checks, 0 failures.**
+
 ## 4. Where the reviewers disagreed, and how it resolved
 
 Worth keeping, because each of these will be re-raised otherwise.
@@ -270,8 +301,18 @@ units-digit rule, not dots.
 
 ## 8. What is left
 
-The Low/polish list (§1) is untouched: `data` still prints the counts under its bars so the graph
-need not be read, `patterns` still only ever asks "What comes next?", `find` Level 4 distractors are
-±3 apart, "0 hundreds" is still grammatically wrong, the ❓ glyph is both the Missing No. icon and the
-gap marker, and `oddeven` loses its pairing picture above 16. None of them mislead a child about
-maths, which is why the debate ranked them below everything shipped above.
+Phases 0–4 closed every Critical, High and Medium finding in §1 and the polish list except three:
+
+- **Coaching tone (L6).** `mixed`, `add` and `sub` still append a strategy line to every question
+  ("Do the multiplication first!", "Watch out for exchanging!"). The panel called it patronising once
+  a child can do it; the developer called it the right scaffolding the first few times. Still open
+  because the fix is a policy, not a patch: move those clauses into a `q.coach` field and speak one
+  only on the first question of a game per session.
+- **Names and target sizes (M6).** The tappable objects are still unnamed `<span>`s, the compare
+  panels have no role or label, and `.icon-btn` measures 46px against the 48px floor.
+- **Zoom on phones (open question 1).** `user-scalable=no` stays, for the child reason.
+
+And one thing no machine in this project can currently check: **the layout has never been measured on
+a real device.** `src/tests.html` reports its 480 geometry assertions as skipped because the embedded
+browser is 0px wide, so every claim here about fitting a phone screen rests on CSS arithmetic, not
+observation. A pass on an actual phone is the highest-value verification left.
