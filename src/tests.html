@@ -199,6 +199,47 @@ function domAudit(id, level, q) {
   }
 }
 
+/* ---------- speech queue (fake speechSynthesis, no audio) ---------- */
+function speechAudit() {
+  const spoken = [];
+  const realProp = Object.getOwnPropertyDescriptor(window, 'speechSynthesis');
+  const fake = { speak(u) { spoken.push(u.text); fake.cur = u; }, cancel() {}, getVoices() { return []; } };
+  Object.defineProperty(window, 'speechSynthesis', { value: fake, configurable: true });
+  const saved = { en: Speech.enabled, cur: Speech.current, pend: Speech.pending };
+  Speech.enabled = true; Speech.current = null; Speech.pending = [];
+
+  Speech.say('How many apples? Tap them to count, then tap the answer!', 'question');
+  Speech.say('3', 'count'); Speech.say('1', 'count'); Speech.say('5', 'count');
+  ok(spoken.length === 1, 'speech: a count-along tap interrupted the question');
+  ok(Speech.pending.length === 1 && Speech.pending[0].text === '5', 'speech: counts piled up in the queue');
+  fake.cur.onend();
+  ok(spoken[1] === '5', 'speech: the queued count never played after the question');
+
+  Speech.say('Is 7 odd or even?', 'question');
+  Speech.say('Great job!', 'praise');
+  ok(Speech.pending.length === 1, 'speech: praise was not queued behind the question');
+  Speech.say('Count the stars!', 'question');
+  ok(Speech.current.text === 'Count the stars!', 'speech: a new question did not take over');
+  Speech.say('Yes! You worked that out!', 'answer');
+  ok(Speech.current.text === 'Yes! You worked that out!' && !Speech.pending.length,
+    'speech: praise for an answered question should not wait behind it');
+
+  Speech.stop();
+  ok(!Speech.current && !Speech.pending.length, 'speech: stop left something in the queue');
+
+  // counting must stop once the question is answered
+  const q = Generators.count(1);
+  State.mode = 'count'; State.level = 1; State.streak = 0; State.misses = 0; State.answered = true;
+  renderQuestion(q);
+  spoken.length = 0;
+  const obj = document.querySelector('#visual .obj');
+  obj.click();
+  ok(!obj.classList.contains('counted') && !spoken.length, 'speech: tapping objects still counts after answering');
+
+  Speech.enabled = saved.en; Speech.current = saved.cur; Speech.pending = saved.pend;
+  if (realProp) Object.defineProperty(window, 'speechSynthesis', realProp);
+}
+
 function run() {
   const t0 = performance.now();
   checks = 0; failures.length = 0; worstContrast = 99;
@@ -218,6 +259,8 @@ function run() {
       }
     }
   }
+
+  speechAudit();
 
   const knownTotal = Object.values(known).reduce((a, b) => a + b, 0);
   const s = $('#summary');

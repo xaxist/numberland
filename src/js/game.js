@@ -87,6 +87,12 @@ const Speech = {
   // Its own switch: a child who mutes the ding-dong must still hear the questions.
   enabled: localStorage.getItem('nl_voice') !== 'off',
   voice: null,
+  // One line at a time, lowest priority first: counting along with the apples must never
+  // chop the instruction short, and the instruction must never chop the praise short.
+  // Once the child has answered the instruction is spent, so praise may cut in front of it.
+  PRIO: { question: 3, answer: 3, praise: 2, count: 1 },
+  current: null,
+  pending: [],
   init() {
     if (!this.supported) return;
     const load = () => {
@@ -99,16 +105,42 @@ const Speech = {
     load();
     speechSynthesis.onvoiceschanged = load;
   },
-  say(text) {
+  say(text, kind = 'praise') {
     if (!this.supported || !this.enabled) return;
-    speechSynthesis.cancel();
+    const p = this.PRIO[kind] || 2;
+    if (this.current) {
+      if (p < this.current.p) {
+        if (p === 1) this.pending = this.pending.filter(x => x.p !== 1); // counts must not pile up
+        this.pending.push({ text, p });
+        return;
+      }
+      this.pending = [];
+      speechSynthesis.cancel();
+      this.current = null;
+    }
+    this.start(text, p);
+  },
+  start(text, p) {
     const u = new SpeechSynthesisUtterance(text);
     if (this.voice) u.voice = this.voice;
     u.rate = 0.95;
     u.pitch = 1.15;
+    u.onend = u.onerror = () => {
+      if (!this.current || this.current.u !== u) return;
+      this.current = null;
+      const next = this.pending.shift();
+      if (next) this.start(next.text, next.p);
+    };
+    this.current = { text, p, u };
     speechSynthesis.speak(u);
   },
-  stop() { if (this.supported) speechSynthesis.cancel(); },
+  busy() { return !!this.current || this.pending.length > 0; },
+  stop() {
+    if (!this.supported) return;
+    this.pending = [];
+    this.current = null;
+    speechSynthesis.cancel();
+  },
 };
 
 /* ---------- confetti ---------- */
@@ -952,9 +984,21 @@ function renderHome() {
     btn.innerHTML = `<span class="mode-icon">${m.icon}</span>
                      <span class="mode-name">${m.name}</span>
                      <span class="mode-desc">${m.desc}</span>`;
+    // Holding a card reads its name out loud and does not start the game, so a pre-reader
+    // can browse the grid by ear. A tap still starts it immediately.
+    let pressTimer = null;
+    let held = false;
+    btn.addEventListener('contextmenu', e => e.preventDefault());
+    btn.addEventListener('pointerdown', () => {
+      held = false;
+      pressTimer = setTimeout(() => { held = true; Speech.stop(); Speech.say(m.name, 'question'); }, 450);
+    });
+    const releasePress = () => clearTimeout(pressTimer);
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => btn.addEventListener(ev, releasePress));
     btn.addEventListener('click', () => {
-      Sound.init(); Sound.pop();
-      Speech.say(m.name);
+      Sound.init();
+      if (held) return;
+      Sound.pop();
       startMode(m.id);
     });
     grid.appendChild(btn);
@@ -1136,12 +1180,12 @@ function renderQuestion(q) {
       s.textContent = emoji;
       if (!isCrossed) {
         s.addEventListener('click', () => {
-          if (s.classList.contains('counted')) return;
+          if (State.answered || s.classList.contains('counted')) return;
           idx++;
           s.classList.add('counted');
           s.dataset.count = idx;
           Sound.init(); Sound.count(idx);
-          Speech.say(String(idx));
+          Speech.say(String(idx), 'count');
         });
       }
       visual.appendChild(s);
@@ -1250,24 +1294,19 @@ function handleCorrect() {
   if (leveledUp) {
     Confetti.launch(150);
     Sound.fanfare();
-    Speech.say(`Level up! Welcome to level ${State.level}!`);
+    Speech.say(`Level up! Welcome to level ${State.level}!`, 'answer');
   } else if (State.misses > 0) {
-    Speech.say('Yes! You worked that out, well done!');
+    Speech.say('Yes! You worked that out, well done!', 'answer');
   } else {
-    Speech.say(pick(PRAISES));
+    Speech.say(pick(PRAISES), 'answer');
   }
 
   const milestone = State.stars % 10 === 0;
-  clearTimeout(State.timer);
-  State.timer = setTimeout(() => {
-    State.timer = null;
+  afterFeedback(() => {
     fb.innerHTML = '';
-    if (milestone) {
-      showReward();
-    } else {
-      nextQuestion();
-    }
-  }, 1600);
+    if (milestone) showReward();
+    else nextQuestion();
+  });
 }
 
 function showReward() {
@@ -1282,12 +1321,24 @@ function showReward() {
 }
 
 /* ---------- flow ---------- */
+/* The hand-off used to be a flat 1600ms, which cut "Level up! Welcome to level 3!" off
+   mid-sentence. Hold the next question until the voice has finished, but never for long. */
+function afterFeedback(done) {
+  const start = Date.now();
+  const tick = () => {
+    if (!Speech.busy() || Date.now() - start > 4500) { State.timer = null; done(); }
+    else State.timer = setTimeout(tick, 150);
+  };
+  clearTimeout(State.timer);
+  State.timer = setTimeout(tick, 1600);
+}
+
 function nextQuestion() {
   State.answered = false;
   State.misses = 0;
   State.question = Generators[State.mode](State.level);
   renderQuestion(State.question);
-  Speech.say(State.question.speak);
+  Speech.say(State.question.speak, 'question');
 }
 
 function startMode(modeId) {
@@ -1347,7 +1398,7 @@ function init() {
   $('#btn-back').addEventListener('click', () => { Sound.pop(); goBack(); });
   $('#btn-repeat').addEventListener('click', () => {
     Sound.pop();
-    if (State.question) Speech.say(State.question.speak);
+    if (State.question) Speech.say(State.question.speak, 'question');
   });
   $('#btn-keep-playing').addEventListener('click', () => {
     Sound.pop();

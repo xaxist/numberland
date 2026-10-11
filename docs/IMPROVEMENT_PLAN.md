@@ -120,6 +120,14 @@ after the animation; every option button passes 3:1; tests page all green.
 
 ### Phase 1 — the speech queue *(RC1)*
 
+> **Status: done 2026-10-11.** `Speech.say(text, kind)` now queues by priority
+> (`question`/`answer` > `praise` > `count`) instead of cancelling; `afterFeedback` holds the
+> hand-off until the voice has finished (capped at 4.5 s); object taps are inert once answered;
+> holding a home card reads its name without starting the game. Asserted permanently by the
+> **speech** audit in `src/tests.html`.
+> Note: the plan said "🔊 on a home card" — there is no speaker button on the cards; a long-press
+> was used instead, which needs no new controls in a grid of 20.
+
 Priority queue so a count-along tap never interrupts the instruction; object handlers respect
 `State.answered`; long-press (or the 🔊 on a card) speaks the mode name and starts the game only on
 release, so names become browsable.

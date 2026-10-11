@@ -34,6 +34,9 @@ repository root.
    - The **`#logo` is hidden while playing** (`showScreen` swaps it with the back button in the
      same top-left slot) — on a phone the logo and the back button do not both fit.
    - Speech and pending question timers must be cancelled when leaving the game screen.
+   - **Hold (long-press) a home card to hear its name** without starting the game — a pre-reader
+     browses the grid by ear; a tap still starts it at once. Tapping the objects in a picture stops
+     once the question has been answered, so the count-along cannot keep talking.
    - A wrong tap never punishes, but a child must never be stuck: on the **second** wrong tap
      of a question the correct option gets a green glow (`reveal`) and is described aloud.
    - Question wording must be grammatical with the content tables (use `OBJECTS[].s` for
@@ -74,16 +77,23 @@ repository root.
 
 Everything is plain script (no modules) with these subsystems, top to bottom:
 
-- **Helpers** — `rand`, `pick`, `shuffle`, `$`; content tables `OBJECTS` (`{ e: emoji,
-  w: plural word, s: singular word }`) and `SHAPES`; `PRAISES`/`ENCOURAGE` phrase lists.
+- **Helpers** — `rand`, `pick`, `shuffle`, `$`, `inkFor(hex)` (WCAG-luminance ink picker); content
+  tables `OBJECTS` (`{ e: emoji, w: plural word, s: singular word }`) and `SHAPES`;
+  `PRAISES`/`ENCOURAGE` phrase lists.
 - **`Sound`** — synthesized effects via Web Audio (`tone()` primitive + `pop`, `count`,
   `correct`, `wrong`, `fanfare`). No audio files. `Sound.enabled` persisted in
   `localStorage['nl_sound']`. AudioContext is created/resumed on first pointer interaction
   (browser autoplay policy).
-- **`Speech`** — wraps `speechSynthesis`; `say(text)` cancels any current utterance first,
-  picks an English voice, rate 0.95 / pitch 1.15. Has its **own** `Speech.enabled` switch
-  (`localStorage['nl_voice']`), independent of `Sound`, so muting the effects never silences
-  the questions.
+- **`Speech`** — wraps `speechSynthesis`, with its **own** `Speech.enabled` switch
+  (`localStorage['nl_voice']`), independent of `Sound`, so muting the effects never silences the
+  questions. `say(text, kind)` is a **one-at-a-time priority queue**, not a bare cancel:
+  `question`/`answer` (3) > `praise` (2) > `count` (1). Lower-priority lines wait their turn
+  (count-along lines collapse to the newest so they cannot pile up), so tapping an apple can no
+  longer truncate the instruction — while a question the child has already answered counts as spent
+  and its praise cuts in front of the remaining wording. `busy()` drives `afterFeedback`, which
+  holds the 1600 ms hand-off until the voice finishes (capped at 4.5 s) so "Level up!" is never cut
+  off. `stop()` clears the queue and the utterance; every exit from the game screen calls it.
+  English voice, rate 0.95 / pitch 1.15.
 - **`Confetti`** — full-screen canvas particle shower; `launch(n)`.
 - **`State`** — `{ stars, trophies, mode, level, streak, misses, answered, question, timer }`.
   Stars/trophies persist in `localStorage['nl_stars']` / `['nl_trophies']` via `State.save()`.
@@ -197,7 +207,7 @@ The whole test suite, in the browser, with no dependencies. It sets `window.NL_T
 before loading `game.js` — which is why the auto-init at the bottom of that file is guarded by
 `if (!window.NL_TEST)` — then disables `Sound`/`Speech`, reseeds `Math.random` (mulberry32, so a
 failure is reproducible from the seed in the URL bar), and runs every generator × level × N
-questions through two audits:
+questions through a **contract** and a **DOM** audit, plus one **speech** audit at the end:
 
 - **contract** — text and `speak` non-empty, no `NaN`/`undefined` leaking into wording, answer
   present and unique among the options (duplicate labels mean `revealAnswer` glows two buttons),
@@ -207,7 +217,11 @@ questions through two audits:
 - **DOM** — `renderQuestion` must not throw, exactly one button may match the answer, option text
   must clear 3:1 against its fill, and crossed objects must still be visible after all CSS
   animations finish (`document.getAnimations().forEach(a => a.finish())` — measure only after this,
-  or `popIn`'s `scale(0)` start frame collapses every rect).
+  or `popIn`'s `scale(0)` start frame collapses every rect);
+- **speech** — swaps in a fake `speechSynthesis` (no audio) and asserts the queue: a count-along tap
+  never interrupts the instruction, queued counts collapse to the newest and play after it, praise
+  waits behind an unfinished question but cuts in once it is answered, `stop()` empties everything,
+  and tapping objects after answering does nothing at all.
 
 Known-but-unfinished defects from `docs/IMPROVEMENT_PLAN.md` are counted separately (amber) rather
 than failed, so the page reads PASS while the roadmap is in progress. Default is 60 questions per
